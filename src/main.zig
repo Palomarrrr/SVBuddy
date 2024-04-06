@@ -50,8 +50,8 @@ pub fn main() !void {
     var window = try capy.Window.init();
     defer window.deinit();
 
-    const target_fp: ?[]u8 = null;
-    _ = target_fp;
+    const target_path: ?[]u8 = null;
+    _ = target_path;
 
     const cont_lin = try capy.column(.{ .name = "1" }, .{
         capy.button(.{ .label = "Apply Effect", .onclick = @ptrCast(&buttonClick) }),
@@ -150,20 +150,19 @@ pub fn main() !void {
 
     window.setTitle("SV Buddy");
 
-    var osu_file: osufile.OsuFile = undefined;
-    try osu_file.init("/home/koishi/Programming/Zig/svbuddy/osu_testfiles/quarks.osu");
+    var target_file: osufile.OsuFile = undefined;
+    try target_file.init("/home/koishi/Programming/Zig/SVUI/test_files/quarks.osu");
+    defer target_file.deinit();
 
-    std.debug.print("\n\nSECTION OFFSETS\n", .{});
-    for (osu_file.section_offsets) |s| std.debug.print("{}\n", .{s});
+    const loc = try target_file.extentsOfSection(787, 4000, sv.TimingPoint);
 
-    const bet = osu_file.extentsOfSection(787, 4000, hitobj.HitObject);
-    std.debug.print("\nFOUND POINT AT: {any}\n", .{bet});
-    const bet2 = osu_file.extentsOfSection(787, 4000, sv.TimingPoint);
-    std.debug.print("\nFOUND POINT AT: {any}\n", .{bet2});
+    var tp = try com.create(sv.TimingPoint);
+    _ = try osufile.load().timingPointArray(target_file.file.?, loc[0], loc[2], &tp);
 
-    try osu_file.reset();
+    try sv.linear(tp, 5.0, 7.5, 304);
 
-    osu_file.deinit();
+    try target_file.placeSection(loc[0], loc[1], tp, .replace);
+
     try window.set(main_cont);
 
     window.show();

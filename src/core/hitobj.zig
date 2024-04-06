@@ -30,7 +30,8 @@ pub const HitObject = struct {
     effects: u16 = 0,
 
     pub fn toStr(self: *const HitObject) ![]u8 {
-        return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},end\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
+        //return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
+        return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},end\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
     }
 };
 
@@ -44,9 +45,7 @@ pub const HitObject = struct {
 pub fn toBarline(hitobj_array: []HitObject) ![]sv.TimingPoint {
     const timing_points: []sv.TimingPoint = try heap.raw_c_allocator.alloc(sv.TimingPoint, hitobj_array.len);
     for (0..hitobj_array.len) |i| {
-        if ((hitobj_array[i].type & 0x1) != 1) { // Skip all non-notes
-            continue;
-        }
+        if ((hitobj_array[i].type & 0x1) != 1) continue; // Skip non-notes
 
         if ((hitobj_array[i].hitSound & 0x1) == 1) { // NEED TO ALSO CHECK FOR FINISHER D
             // D

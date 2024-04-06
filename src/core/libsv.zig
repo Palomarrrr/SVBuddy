@@ -37,7 +37,7 @@ pub const TimingPoint = struct {
     effects: u8 = 0,
 
     pub fn toStr(self: *const TimingPoint) ![]u8 {
-        return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{d:.6},{},{},0,{},{},{}\n", .{ self.time, self.value, self.meter, self.sampleSet, self.volume, self.is_inh, self.effects });
+        return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{d:.12},{},{},0,{},{},{}\r\n", .{ self.time, self.value, self.meter, self.sampleSet, self.volume, self.is_inh, self.effects });
     }
     pub fn valueToHumanReadable(self: *const TimingPoint) f32 {
         return if (self.is_inh == 1) 60000.0 / self.value else -100.0 / self.value;
@@ -125,7 +125,7 @@ inline fn getNumInherited(sv_arr: []TimingPoint) u32 {
 pub fn linear(sv_arr: []TimingPoint, sv_start: f32, sv_end: f32, initial_bpm: f32) !void {
     var curr_sv = sv_start;
     const n_inh = getNumInherited(sv_arr);
-    const sv_slope: f32 = ((sv_end - sv_start) / @as(f32, @floatFromInt(sv_arr.len - (1 + n_inh))));
+    const sv_slope: f32 = ((sv_end - sv_start) / @as(f32, @floatFromInt(n_inh)));
     var next_bpm: f32 = initial_bpm;
     for (0..sv_arr.len) |i| {
         if (sv_arr[i].is_inh == 0) { // If point is inherited

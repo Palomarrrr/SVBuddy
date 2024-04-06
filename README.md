@@ -1,9 +1,9 @@
-# capy-template
-Simple template for a Capy app
-
-**Target Zig Version: zig `0.12.0-dev.2063+804cee3b9` ([2024.1.0-mach](https://machengine.org/about/nominated-zig/))**
+# svbuddy
+The next generation of shitty sv tools
 
 ## Building
+**Target Zig Version: zig `0.12.0-dev.2063+804cee3b9` ([2024.1.0-mach](https://machengine.org/about/nominated-zig/))**
+
 If you wish to run the app simply execute
 ```sh
 zig build run

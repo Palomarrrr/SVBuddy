@@ -1,11 +1,10 @@
-// Standard lib
 const std = @import("std");
 const fs = std.fs;
 const heap = std.heap;
 const fmt = std.fmt;
 
-const sv = @import("./libsv.zig");
-const hitobj = @import("./hitobj.zig");
+const sv = @import("../core/libsv.zig");
+const hitobj = @import("../core/hitobj.zig");
 
 const stdout_file = std.io.getStdOut().writer();
 var bw = std.io.bufferedWriter(stdout_file);
@@ -35,6 +34,7 @@ pub const OsuFile = struct {
     file: ?fs.File,
     //metadata: meta.Metadata,
     section_offsets: [7]usize,
+    section_end_offsets: [7]usize,
     curr_offsets: [7]usize,
 
     // Basically a constructor
@@ -67,10 +67,8 @@ pub const OsuFile = struct {
 
     // Write changes to disk
     pub fn save(self: *OsuFile) !void {
-        if (self.file) |fp| {
-            fp.close();
-            fp = fs.openFileAbsolute(self.path, .{ .mode = .read_write });
-        }
+        if (self.file == null) return OsuFileIOError.FileDNE;
+        try self.file.?.sync();
     }
 
     // Create a backup of the original file
@@ -82,10 +80,10 @@ pub const OsuFile = struct {
     }
 
     // Returns the byte offset of the starting line, ending line, and the number of points found
-    pub fn extentsOfSection(self: *OsuFile, lower: i32, upper: i32, mode: anytype) ![3]?u64 {
+    pub fn extentsOfSection(self: *OsuFile, lower: i32, upper: i32, mode: anytype) ![3]u64 {
         if (self.file == null) return OsuFileIOError.FileDNE;
         var buffer = [_]u8{0} ** 64;
-        var retval = [_]?u64{ null, null, 0 };
+        var retval = [_]u64{0} ** 3;
         var m: usize = 0; // mode
         var t: u2 = 0; // where is the 'time' field located
         var bytes_read: usize = 64;
@@ -138,13 +136,15 @@ pub const OsuFile = struct {
 
                             if (lower <= found_time and found_time <= upper) {
                                 if (!last_in_range) retval[0] = try self.file.?.getPos() - 65; // f->t transition
-                                retval[1] = try self.file.?.getPos() - 65; // Move the end point along
                                 last_in_range = true;
-                                (retval[2] orelse unreachable) += 1;
+                                retval[2] += 1;
                             } else {
-                                if (last_in_range) break :_while; // t->f transition marks the end of the section
+                                if (last_in_range) {
+                                    retval[1] = try self.file.?.getPos() - 64; // Move the end point along
+                                    break :_while; // t->f transition marks the end of the section
+                                }
                             }
-                            try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - (std.ascii.indexOfIgnoreCasePos(&buffer, 0, &[_]u8{'\n'}) orelse 0) - 1)))); // Skip to the end of the line
+                            try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse 0) - 1)))); // Skip to the end of the line
                             break :_for;
                         }
 
@@ -169,43 +169,87 @@ pub const OsuFile = struct {
         if (i[0]) |j| return j else return null;
     }
 
-    // TODO: Implement and also figure out if anytype is working properly
-    pub fn placeSection(self: *OsuFile, offset: u64, arr: anytype, mode: enum { replace, append }) !void {
+    // TODO: remove append and just use replace.you can do the same thing as it by doing placeSection(end_of_sec, end_of_sec, arr)
+    pub fn placeSection(self: *OsuFile, start: u64, end: u64, arr: anytype, mode: enum { replace, append }) !void {
         if (self.file == null) return OsuFileIOError.FileDNE;
 
-        if (@TypeOf(arr) != []sv.TimingPoint or @TypeOf(arr) != []hitobj.HitObject) unreachable; // TODO: make this return an error
+        // This is fucked... just let me use an if statement please
+        _ = switch (@TypeOf(arr)) {
+            []sv.TimingPoint, []hitobj.HitObject => 0,
+            else => unreachable,
+        };
 
-        try self.file.?.seekTo(offset);
+        var len = self.path.len;
 
-        switch (mode) {
-            .replace => self.replaceSection(arr),
-            .append => self.appendSection(arr),
+        for (0..len) |i| {
+            if (self.path[self.path.len - 1 - i] == '/') break;
+            len -= 1;
         }
-    }
 
-    inline fn replaceSection(self: *OsuFile, arr: anytype) !void {
-        _ = self;
-        //const m: u1 = switch (@TypeOf(arr)) {
-        //    []sv.TimingPoint => 0,
-        //    []hitobj.HitObject => 1,
-        //    else => unreachable,
-        //};
+        const tmp_pref: []u8 = try heap.raw_c_allocator.alloc(u8, len);
+        @memcpy(tmp_pref, self.path[0..len]);
+        const tmp_path = try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ tmp_pref, @constCast("tmp.txt") });
+        defer heap.raw_c_allocator.free(tmp_path);
 
+        const tmpfp: fs.File = try fs.createFileAbsolute(tmp_path, .{ .read = true, .truncate = true });
+
+        try self.file.?.seekTo(0);
+
+        var t = [_]u8{0};
+        var l: u64 = 1;
+        for (0..start) |_| {
+            _ = try self.file.?.readAll(&t);
+            _ = try tmpfp.writeAll(&t);
+        }
+        if (t[0] == '\r') try tmpfp.writeAll(&[_]u8{10});
+
+        // Insert the new stuff
         for (arr) |a| {
-            _ = a;
+            _ = try tmpfp.writeAll(try a.toStr());
         }
-    }
 
-    inline fn appendSection(self: *OsuFile, arr: anytype) !void {
-        for (arr) |a| {
-            self.file.?.write(a.toStr());
+        if (mode == .replace) try self.file.?.seekTo(end); // pick at the end of the section we want to replace
+
+        while (l == 1) {
+            l = try self.file.?.readAll(&t);
+            _ = try tmpfp.writeAll(&t);
         }
+        // Switch the files out
+        self.file.?.close();
+        tmpfp.close();
+
+        try fs.renameAbsolute(tmp_path, self.path); // Move
+
+        // This shouldn't cause a leak I think?
+        self.file = try fs.openFileAbsolute(self.path, .{ .mode = .read_write });
+        try self.findSectionOffsets();
     }
 
     // Shitty internal fn
     inline fn isEq(a: []const u8, b: []const u8) bool {
         for (a, 0..a.len) |c, i| if (c != b[i]) return false;
         return true;
+    }
+
+    pub fn findEndOfSectionOffset(self: *OsuFile, offset: u64) !u64 {
+        if (self.file == null) return OsuFileIOError.FileDNE;
+        var buffer = [_]u8{0} ** 64;
+        var bytes_read: u64 = 64;
+
+        try self.file.?.seekTo(offset + 2);
+
+        _while: while (bytes_read > 0) {
+            const i = std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'});
+            if (i) |j| {
+                if (j < 2) {
+                    try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - j - 1))));
+                    break :_while;
+                }
+                try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - j - 1))));
+            }
+            bytes_read = try self.file.?.readAll(&buffer);
+        }
+        return try self.file.?.getPos() - 2;
     }
 
     // Get section offsets for the .osu file
@@ -216,12 +260,12 @@ pub const OsuFile = struct {
         if (self.file == null) return OsuFileIOError.FileDNE;
 
         // Check if the file is too big
-        // TODO: This is kinda stupid... think about removing it...
-        const file_size: u64 = try self.file.?.getEndPos();
-        if ((file_size / 1024) >= 1500) { // Don't want to spend forever processing and or hog a ton or memory
-            std.debug.print("\x1b[31mERROR: This file is WAAAYY too large to work on... (1.5Mb)\x1b[0m\n", .{});
-            return OsuFileIOError.FileTooLarge; // Return an error
-        }
+        // TODO: This is kinda stupid... think about removing it... | ... yea fuck this
+        //const file_size: u64 = try self.file.?.getEndPos();
+        //if ((file_size / 1024) >= 1500) { // Don't want to spend forever processing and or hog a ton or memory
+        //    std.debug.print("\x1b[31mERROR: This file is WAAAYY too large to work on... (1.5Mb)\x1b[0m\n", .{});
+        //    return OsuFileIOError.FileTooLarge; // Return an error
+        //}
 
         try self.file.?.seekTo(0); // Make sure we're at the start
 
@@ -262,7 +306,6 @@ pub const OsuFile = struct {
 
 const BLOCK_SZ = 128; // This is kinda dumb
 
-// TODO: Make a loadFrom(start_time, end_time) fn
 pub fn load() type {
     return struct {
         var buffer = [_]u8{0} ** 64;
@@ -383,7 +426,7 @@ pub fn load() type {
                 for (buffer, 0..buffer.len) |c, i| {
                     if (c <= '\r') {
                         hitobj_array.*[curr_point] = try StrToHitObject(); // Convert the string and load it into the array
-                        try file.seekBy(@as(i64, @intCast(i)) - @as(i64, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data. "Why + 2?" ZERO FUCKING CLUE it works though!
+                        try file.seekBy(@as(i64, @intCast(i)) - @as(i64, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data.
                         i_strbuf = 0; // Set this iterator to 0
                         @memset(&str_buff, 0); // Clear out the string buffer
                         break;
@@ -411,7 +454,7 @@ pub fn load() type {
                 for (buffer, 0..buffer.len) |c, i| {
                     if (c <= '\r') {
                         sv_array.*[curr_point] = try StrToTimingPoint(); // Convert the string and load it into the array
-                        try file.seekBy(@as(i64, @intCast(i)) - @as(i64, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data. "Why + 2?" ZERO FUCKING CLUE it works though!
+                        try file.seekBy(@as(i64, @intCast(i)) - @as(i64, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data.
                         i_strbuf = 0; // Set this iterator to 0
                         @memset(&str_buff, 0); // Clear out the string buffer
                         break;

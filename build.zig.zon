@@ -1,5 +1,5 @@
 .{
-    .name = "capy-template",
+    .name = "svbuddy",
     .version = "0.0.0",
     .paths = .{ "."},
     .dependencies = .{ .capy = .{
