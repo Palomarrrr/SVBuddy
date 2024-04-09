@@ -106,13 +106,34 @@ pub fn pruneUnusedSv(sv_arr: *[]TimingPoint, obj_arr: []hitobj.HitObject) !void 
     sv_arr.* = new_sv_arr;
 }
 
+pub fn mergeSvArrs(dest: *[]TimingPoint, src: []TimingPoint) !void {
+    var retarr: []TimingPoint = try std.heap.raw_c_allocator.alloc(TimingPoint, dest.*.len + src.len);
+
+    var i: usize = 0;
+    var j: usize = 0;
+    var k: usize = 0;
+
+    while (i < retarr.len) : (i += 1) {
+        if (j < dest.*.len and (k >= src.len or dest.*[j].time < src[k].time)) {
+            retarr[i] = dest.*[j];
+            j += 1;
+        } else if (k < src.len) {
+            retarr[i] = src[k];
+            k += 1;
+        } else break;
+    }
+
+    //std.heap.raw_c_allocator.free(dest.*); // Free old content
+    dest.* = retarr; // Assign to return array
+}
+
 //**********************************************************
 //                        SV EFFECTS
 //**********************************************************
 
 // TODO - Add a way to scale SV values over changing bpms -- should be done
 
-inline fn getNumInherited(sv_arr: []TimingPoint) u32 {
+pub inline fn getNumInherited(sv_arr: []TimingPoint) u32 {
     var c: u32 = 0;
     if (sv_arr.len == 0) return 0; // if nothing is given
     for (sv_arr) |point| {

@@ -5,24 +5,25 @@ const fmt = std.fmt;
 
 const sv = @import("../core/libsv.zig");
 const hitobj = @import("../core/hitobj.zig");
+const meta = @import("./metadata.zig");
 
 const stdout_file = std.io.getStdOut().writer();
 var bw = std.io.bufferedWriter(stdout_file);
 const stdout = bw.writer();
 
-const OsuFileIOError = error{
+pub const OsuFileIOError = error{
     FileDNE,
     FileTooLarge, // If the file is too big to work on
     IncompleteFile, // If the file either ends in an unexpected place or does not have some vital data (ex. missing metadata fields)
     InvalidType,
 };
 
-const OsuSectionError = error{
+pub const OsuSectionError = error{
     SectionDoesNotExist, // Trying to access a section that does not exist
     FoundTooManySections, // If more than 8 sections are found
 };
 
-const OsuObjErr = error{
+pub const OsuObjErr = error{
     FoundTooManyFields,
     PointDNE,
 };
@@ -32,7 +33,7 @@ const HEADER_MAP = [_][]const u8{ "General", "Editor", "Metadata", "Difficulty",
 pub const OsuFile = struct {
     path: []u8,
     file: ?fs.File,
-    //metadata: meta.Metadata,
+    metadata: meta.Metadata,
     section_offsets: [7]usize,
     section_end_offsets: [7]usize,
     curr_offsets: [7]usize,
@@ -46,14 +47,24 @@ pub const OsuFile = struct {
 
         self.file = try fs.openFileAbsolute(self.path, .{ .mode = .read_write });
 
-        // Get metadata here
         try self.findSectionOffsets();
         for (self.section_offsets, 0..self.section_offsets.len) |s, i| self.curr_offsets[i] = s;
+
+        // TODO: This next bit is utterly retarded... how about no... you can do better
+        const eos = try self.findEndOfSectionOffset(self.section_offsets[2]);
+        const metadata_sect: []u8 = try std.heap.raw_c_allocator.alloc(u8, eos - self.section_offsets[2]);
+        defer std.heap.raw_c_allocator.free(metadata_sect);
+
+        try self.file.?.seekTo(self.section_offsets[2]);
+        _ = try self.file.?.readAll(metadata_sect);
+
+        try self.metadata.init(metadata_sect);
     }
 
     // Destructor
     pub fn deinit(self: *OsuFile) void {
         self.file.?.close();
+        self.metadata.deinit();
         heap.raw_c_allocator.free(self.path);
     }
 
@@ -75,19 +86,75 @@ pub const OsuFile = struct {
     // Save that and the original to disk under different names
     // Probably like "diffname" -> "diffname-backup-TIMESTAMP"
     // Probably timestamp of sec+min+hour+day+mon+year
-    pub fn createBackup(self: *OsuFile) !void {
-        _ = self;
+    pub fn createBackup(self: *OsuFile) ![]u8 {
+        var len = self.path.len;
+
+        for (0..len) |i| {
+            if (self.path[self.path.len - 1 - i] == '/') break;
+            len -= 1;
+        }
+
+        const bckup_v_name = try self.metadata.genBackupVerName();
+        const bckup_f_name = try self.metadata.genBackupFileName();
+
+        const tmp_pref: []u8 = try heap.raw_c_allocator.alloc(u8, len);
+        @memcpy(tmp_pref, self.path[0..len]);
+        const tmp_path = try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ tmp_pref, bckup_f_name });
+        //defer heap.raw_c_allocator.free(tmp_path);
+
+        const tmpfp: fs.File = try fs.createFileAbsolute(tmp_path, .{ .read = true, .truncate = true });
+
+        // then basically the same procedure as place section but this time with the metadata
+
+        const last_loc = try self.file.?.getPos(); // save this
+
+        const eos = try self.findEndOfSectionOffset(self.section_offsets[2]);
+        try self.file.?.seekTo(0);
+
+        var t = [_]u8{0};
+
+        // Copy up to the section
+        while (try self.file.?.getPos() <= self.section_offsets[2]) {
+            _ = try self.file.?.read(&t);
+            _ = try tmpfp.write(&t);
+        }
+
+        // Then insert new metadata
+
+        // TODO: This is bad
+        // Make a function to return a properly formatted string given a field or something
+        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Title:"), self.metadata.title, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("TitleUnicode:"), self.metadata.title_unicode, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Artist:"), self.metadata.artist, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("ArtistUnicode:"), self.metadata.artist_unicode, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Creator:"), self.metadata.creator, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Version:"), bckup_v_name, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Source:"), self.metadata.source, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Tags:"), self.metadata.tags, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try fmt.allocPrint(heap.raw_c_allocator, "BeatmapID:{}\r\n", .{self.metadata.beatmap_id}));
+        _ = try tmpfp.writeAll(try fmt.allocPrint(heap.raw_c_allocator, "BeatmapSetID:{}\r\n", .{self.metadata.set_id}));
+
+        // Now pick up from where the section ended
+        try self.file.?.seekTo(eos);
+
+        while (try self.file.?.read(&t) != 0) {
+            _ = try tmpfp.write(&t);
+        }
+
+        tmpfp.close(); // Close the file
+
+        try self.file.?.seekTo(last_loc); // Go back
+        return tmp_path;
     }
 
-    // Returns the byte offset of the starting line, ending line, and the number of points found
+    // TODO: see if you can return the effect flags off the START in the return value
     pub fn extentsOfSection(self: *OsuFile, lower: i32, upper: i32, mode: anytype) ![3]u64 {
         if (self.file == null) return OsuFileIOError.FileDNE;
-        var buffer = [_]u8{0} ** 64;
         var retval = [_]u64{0} ** 3;
         var m: usize = 0; // mode
         var t: u2 = 0; // where is the 'time' field located
         var bytes_read: usize = 64;
-        var last_in_range = false; // Explained below
+        var last_in_range = false;
 
         // _____--------____
         //      ^      ^
@@ -109,59 +176,119 @@ pub const OsuFile = struct {
         try self.file.?.seekTo(self.section_offsets[m] + 1);
 
         // This feels cursed
-        _while: while (bytes_read >= 64) {
-            var field: u2 = 0;
-            var field_buf = [_]u8{0} ** 32; // The longest time value I could find was 17 chars long
-            var i_fb: usize = 0;
+        _line: while (bytes_read >= 64) {
+            var buffer = [_]u8{0} ** 64;
+            var i_b: usize = 0;
+            var f: usize = 0;
 
             bytes_read = try self.file.?.readAll(&buffer);
+            const eol = std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse 0;
+            var last_i_b: usize = 0;
 
-            _for: for (buffer, 0..buffer.len) |c, i| {
-                switch (c) {
-                    '\n' => { // FUCK YOU BILL GOD DAMN IT I HATE \r\n
-                        if (i < 2) break :_while; // This means we reached the end of the section | hopefully this prevents \r\n
+            _char: while (eol != 0) {
+                i_b = std.ascii.indexOfIgnoreCasePos(&buffer, i_b + 1, &[_]u8{','}) orelse break :_char; // Next instance of ,
+                if (i_b >= eol) break :_char;
+                if (f == t) {
+                    const found_time = try std.fmt.parseInt(i32, buffer[last_i_b..i_b], 10);
+                    //std.debug.print("FOUND: {s}|||{}\n", .{ buffer, found_time });
 
-                        // Not sure if i actually need this
-                        //try self.file.?.seekBy(@as(i64, @intCast(i)) - @as(i64, @intCast(bytes_read)) + 2); // Seek back
-                        //break :_for; // Start over
-
-                    },
-                    ',' => blk: {
-                        if (field < t) {
-                            field += 1;
-                            i_fb = 0;
-                            @memset(&field_buf, 0);
-                        } else {
-                            const found_time = try std.fmt.parseInt(i32, field_buf[0..i_fb], 10); // Just to make this next bit readable
-
-                            if (lower <= found_time and found_time <= upper) {
-                                if (!last_in_range) retval[0] = try self.file.?.getPos() - 65; // f->t transition
-                                last_in_range = true;
-                                retval[2] += 1;
-                            } else {
-                                if (last_in_range) {
-                                    retval[1] = try self.file.?.getPos() - 64; // Move the end point along
-                                    break :_while; // t->f transition marks the end of the section
-                                }
-                            }
-                            try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse 0) - 1)))); // Skip to the end of the line
-                            break :_for;
+                    if (lower <= found_time and found_time <= upper) {
+                        if (!last_in_range) {
+                            retval[0] = try self.file.?.getPos() - 64; // f->t transition
                         }
-
-                        break :blk;
-                    },
-
-                    else => {
-                        field_buf[i_fb] = c;
-                        i_fb += 1;
-                    },
-                }
+                        last_in_range = true;
+                        retval[2] += 1;
+                    } else {
+                        if (last_in_range) {
+                            retval[1] = try self.file.?.getPos() - 64;
+                            break :_line;
+                        } else retval[0] = (((try self.file.?.getPos()) - bytes_read) + eol + 1);
+                    }
+                    break :_char;
+                } else f += 1;
+                last_i_b = i_b + 1;
             }
+            if (eol < 2) break :_line;
+            try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - eol - 1))));
         }
 
-        try self.file.?.seekTo(self.curr_offsets[m]); // Move the cursor back to where it was last
+        if (retval[1] == 0) retval[1] = try self.findEndOfSectionOffset(self.section_offsets[m] + 1);
 
+        // DEBUG
+        //var buf = [_]u8{0} ** 65;
+        //try self.file.?.seekTo(retval[0] - 32);
+        //_ = try self.file.?.readAll(&buf);
+        //std.debug.print("RETVAL0 : {s}\n|||END|||\n", .{buf});
+        //@memset(&buf, 0);
+        //try self.file.?.seekTo(retval[1] - 32);
+        //_ = try self.file.?.readAll(&buf);
+        //std.debug.print("RETVAL1 : {s}\n|||END|||\n", .{buf});
+        //@memset(&buf, 0);
+        //DEBUG
+
+        //std.debug.print("EXTENTS: {}->{}\n", .{ retval[0], retval[1] });
+        try self.file.?.seekTo(self.curr_offsets[m]); // Move the cursor back to where it was last
         return retval;
+    }
+
+    pub fn findSectionInitialBPM(self: *OsuFile, offset: u64) !f32 {
+        var buffer = [_]u8{0} ** 64;
+        var bytes_read: u64 = 0;
+        var fields: u3 = 0;
+        var bpmlineoffset: u64 = 0;
+        var bpmoffset = [_]usize{ 0, 0 };
+        bpmoffset[0] = 1;
+
+        try self.file.?.seekTo(self.section_offsets[5]);
+
+        while (try self.file.?.getPos() <= offset) {
+            bytes_read = try self.file.?.readAll(&buffer);
+            _for: for (buffer, 0..buffer.len) |c, i| {
+                switch (c) {
+                    '\n' => {
+                        try self.file.?.seekBy(@as(i64, @intCast(i)) - @as(i64, @intCast(bytes_read)) + 2); // Seek back
+                        break :_for; // Start over
+                    },
+                    ',' => {
+                        switch (fields) {
+                            6 => {
+                                if (buffer[i - 1] == '1') bpmlineoffset = try self.file.?.getPos() - 65;
+                                try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse 0) - 1)))); // Skip to the end of the line
+                                break :_for;
+                            },
+                            else => fields += 1,
+                        }
+                    },
+                    else => continue :_for,
+                }
+            }
+            fields = 0;
+            @memset(&buffer, 0);
+        }
+
+        if (bpmlineoffset == 0) return OsuObjErr.PointDNE;
+
+        try self.file.?.seekTo(bpmlineoffset);
+        _ = try self.file.?.readAll(&buffer);
+
+        fields = 0;
+        _for: for (buffer, 0..buffer.len) |c, i| { // Find where the value section is located
+            switch (c) {
+                ',' => {
+                    switch (fields) {
+                        0 => bpmoffset[0] = i + 1,
+                        1 => {
+                            bpmoffset[1] = i;
+                            break :_for;
+                        },
+                        else => return OsuObjErr.FoundTooManyFields,
+                    }
+                },
+                else => continue,
+            }
+            fields += 1;
+        }
+        return 60000.0 / try fmt.parseFloat(f32, buffer[bpmoffset[0]..bpmoffset[1]]);
     }
 
     pub fn posOfPoint(self: *OsuFile, time: i32, mode: anytype) !?u64 {
@@ -259,13 +386,12 @@ pub const OsuFile = struct {
 
         if (self.file == null) return OsuFileIOError.FileDNE;
 
-        // Check if the file is too big
-        // TODO: This is kinda stupid... think about removing it... | ... yea fuck this
-        //const file_size: u64 = try self.file.?.getEndPos();
-        //if ((file_size / 1024) >= 1500) { // Don't want to spend forever processing and or hog a ton or memory
-        //    std.debug.print("\x1b[31mERROR: This file is WAAAYY too large to work on... (1.5Mb)\x1b[0m\n", .{});
-        //    return OsuFileIOError.FileTooLarge; // Return an error
-        //}
+        // Warn if file is really big
+        const file_size: u64 = try self.file.?.getEndPos();
+        if ((file_size / 1024) >= 1500) { // Don't want to spend forever processing and or hog a ton or memory
+            std.debug.print("\x1b[33mWARNING: What the hell man...\nWhy are you editing nanaparty with this shitty tool\n(File size exceeds 1.5Mb)\x1b[0m\n", .{});
+            return OsuFileIOError.FileTooLarge; // Return an error
+        }
 
         try self.file.?.seekTo(0); // Make sure we're at the start
 
@@ -306,6 +432,7 @@ pub const OsuFile = struct {
 
 const BLOCK_SZ = 128; // This is kinda dumb
 
+// TODO: MERGE THIS INTO OsuFile STRUCT
 pub fn load() type {
     return struct {
         var buffer = [_]u8{0} ** 64;
@@ -319,48 +446,56 @@ pub fn load() type {
             var field: u8 = 0; // Current field we're filling out
             var i_buf: u8 = 0; // Current index in the buf
 
-            for (buffer) |c| { // Loop through the given string char by char
-                if (c == ',') { // ',' denotes end of field
-                    switch (field) { // Figure out which field we're on
-                        0 => blk: {
-                            point.time = try fmt.parseInt(i32, buf[0..i_buf], 10); // Need to use a slice or the function will try and translate the blank spots of the buf, resulting in an error
-                            break :blk;
-                        },
-                        1 => blk: {
-                            point.value = try fmt.parseFloat(f32, buf[0..i_buf]);
-                            break :blk;
-                        },
-                        2 => blk: {
-                            point.meter = try fmt.parseUnsigned(u8, buf[0..i_buf], 10);
-                            break :blk;
-                        },
-                        3 => blk: {
-                            point.sampleSet = try fmt.parseUnsigned(u8, buf[0..i_buf], 10);
-                            break :blk;
-                        },
-                        4 => break, // Unneeded
-                        5 => blk: {
-                            point.volume = try fmt.parseUnsigned(u8, buf[0..i_buf], 10);
-                            break :blk;
-                        },
-                        6 => blk: {
-                            point.is_inh = try fmt.parseUnsigned(u1, buf[0..i_buf], 10);
-                            break :blk;
-                        },
-                        7 => blk: {
-                            point.effects = try fmt.parseUnsigned(u8, buf[0..i_buf], 10);
-                            break :blk;
-                        },
-                        else => {
-                            return OsuObjErr.FoundTooManyFields;
-                        },
-                    }
-                    field += 1; // Increment the field
-                    i_buf = 0; // Set the buf index to 0
-                    @memset(&buf, 0);
-                } else {
-                    buf[i_buf] = c;
-                    i_buf += 1;
+            _for: for (buffer) |c| { // Loop through the given string char by char
+                switch (c) {
+                    '\r' => continue, // KILL YOURSELF!!!
+                    '\n', ',' => comma: { // ',' denotes end of field
+                        switch (field) { // Figure out which field we're on
+                            0 => blk: {
+                                point.time = try fmt.parseInt(i32, buf[0..i_buf], 10); // Need to use a slice or the function will try and translate the blank spots of the buf, resulting in an error
+                                break :blk;
+                            },
+                            1 => blk: {
+                                point.value = try fmt.parseFloat(f32, buf[0..i_buf]);
+                                break :blk;
+                            },
+                            2 => blk: {
+                                point.meter = try fmt.parseUnsigned(u8, buf[0..i_buf], 10);
+                                break :blk;
+                            },
+                            3 => blk: {
+                                point.sampleSet = try fmt.parseUnsigned(u8, buf[0..i_buf], 10);
+                                break :blk;
+                            },
+                            4 => blk: { // Unneeded
+                                break :blk;
+                            },
+                            5 => blk: {
+                                point.volume = try fmt.parseUnsigned(u8, buf[0..i_buf], 10);
+                                break :blk;
+                            },
+                            6 => blk: {
+                                point.is_inh = try fmt.parseUnsigned(u1, buf[0..i_buf], 10);
+                                break :blk;
+                            },
+                            7 => blk: {
+                                point.effects = try fmt.parseUnsigned(u8, buf[0..i_buf], 10);
+                                break :blk;
+                            },
+                            else => {
+                                //return OsuObjErr.FoundTooManyFields;
+                                break :_for;
+                            },
+                        }
+                        field += 1; // Increment the field
+                        i_buf = 0; // Set the buf index to 0
+                        @memset(&buf, 0);
+                        break :comma;
+                    },
+                    else => {
+                        buf[i_buf] = c;
+                        i_buf += 1;
+                    },
                 }
             }
             return point;
@@ -420,9 +555,10 @@ pub fn load() type {
 
             for (0..hitobj_array.*.len) |curr_point| {
                 const bytes_read = try file.readAll(&buffer); // Read in the new data
-                if (bytes_read < buffer.len) { // If we read less than the buffer can hold, then we must be at the end
-                    return OsuFileIOError.IncompleteFile;
-                }
+                if (bytes_read == 0) break;
+                //if (bytes_read < buffer.len) { // If we read less than the buffer can hold, then we must be at the end
+                //return OsuFileIOError.IncompleteFile;
+                //}
                 for (buffer, 0..buffer.len) |c, i| {
                     if (c <= '\r') {
                         hitobj_array.*[curr_point] = try StrToHitObject(); // Convert the string and load it into the array
@@ -448,9 +584,10 @@ pub fn load() type {
 
             for (0..sv_array.len) |curr_point| {
                 const bytes_read = try file.readAll(&buffer);
-                if (bytes_read < buffer.len) { // If we read less than the buffer can hold, then we must be at the end
-                    return OsuFileIOError.IncompleteFile;
-                }
+                if (bytes_read == 0) break;
+                //if (bytes_read < buffer.len) { // If we read less than the buffer can hold, then we must be at the end
+                //return OsuFileIOError.IncompleteFile;
+                //}
                 for (buffer, 0..buffer.len) |c, i| {
                     if (c <= '\r') {
                         sv_array.*[curr_point] = try StrToTimingPoint(); // Convert the string and load it into the array

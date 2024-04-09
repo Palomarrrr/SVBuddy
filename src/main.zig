@@ -1,22 +1,24 @@
 const std = @import("std");
 const capy = @import("capy");
-const sv = @import("./core/libsv.zig");
 const osufile = @import("./core/osufileio.zig");
-const hitobj = @import("./core/hitobj.zig");
 const com = @import("./util/common.zig");
+const backend = @import("./util/backend_wrappers.zig");
 
 // This is required for your app to build to WebAssembly and other particular architectures
 pub usingnamespace capy.cross_platform;
 
+// This is awful but its the only way i can think of passing this
+var CURR_FILE: ?*osufile.OsuFile = null;
+
 // TODO - MAKE THIS DYNAMIC | find a way to get some kind of "name" field from the parent and then switch off that
 fn buttonClick(btn: *capy.Button) anyerror!void {
     const parent_wgt = btn.*.getParent().?.as(capy.Container);
-    //const text_wgt = try parent_wgt.*.getChildAt(2).as(capy.TextField);
     const parent_name = parent_wgt.widget.?.name.get() orelse unreachable;
 
     var i: usize = 2;
     var p: usize = 0;
     var max: usize = 0;
+    var option_bflag: u8 = 0;
 
     var params = try std.heap.raw_c_allocator.alloc([]u8, 6);
 
@@ -24,7 +26,25 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         1, 2, 5 => max = 8,
         3 => max = 10,
         4 => max = 12,
-        6 => max = 2,
+        6 => { // 4,5,6,8
+            max = 2;
+
+            // Get the status of all options in the settings menu
+            const check_wg = (try parent_wgt.*.getChildAt(4)).as(capy.CheckBox); // 4
+            const check = check_wg.*.checked.get();
+            const check_wg2 = (try parent_wgt.*.getChildAt(5)).as(capy.CheckBox);
+            const check2 = check_wg2.*.checked.get();
+            const check_wg3 = (try parent_wgt.*.getChildAt(6)).as(capy.CheckBox);
+            const check3 = check_wg3.*.checked.get();
+            const check_wg4 = (try parent_wgt.*.getChildAt(8)).as(capy.CheckBox);
+            const check4 = check_wg4.*.checked.get();
+
+            // TODO: FUCK YOU FOR DOING THIS
+            if (check) option_bflag |= 0x1;
+            if (check2) option_bflag |= 0x2;
+            if (check3) option_bflag |= 0x4;
+            if (check4) option_bflag |= 0x8;
+        },
         else => unreachable,
     }
 
@@ -37,7 +57,16 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
     }
 
     switch (parent_name[0] - '0') {
-        // Wrapper fns go here
+        1 => try backend.linear(CURR_FILE, params),
+        2 => try backend.exponential(CURR_FILE, params),
+        //3 => try backend.sinusoidal(CURR_FILE, params),
+        //4 => try backend.bezier(CURR_FILE, params),
+        //5 => try backend.adjust(CURR_FILE, params),
+        6 => {
+            params[1] = try std.heap.raw_c_allocator.alloc(u8, 1);
+            params[1][0] = option_bflag;
+            CURR_FILE = try backend.initTargetFile(params);
+        },
         else => unreachable,
     }
 
@@ -64,6 +93,8 @@ pub fn main() !void {
         capy.label(.{ .alignment = .Left, .text = "End Value" }),
         capy.textField(.{}),
         capy.checkBox(.{ .label = "Bounded Random" }),
+        capy.label(.{ .alignment = .Left, .text = "Variance" }),
+        capy.textField(.{ .readOnly = true }),
     });
 
     const cont_exp = try capy.column(.{ .name = "2" }, .{
@@ -125,8 +156,15 @@ pub fn main() !void {
 
     const cont_set = try capy.column(.{ .name = "6" }, .{
         capy.button(.{ .label = "Apply Settings", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "osu! song file path" }),
+        capy.label(.{ .alignment = .Left, .text = "osu! Song directory path" }),
         capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "SV Settings" }),
+        capy.checkBox(.{ .label = "Snap SV to notes", .checked = true }),
+        capy.checkBox(.{ .label = "Normalize SV over BPM changes", .checked = true }),
+        capy.checkBox(.{ .label = "Overwrite all previous SV", .checked = false }),
+        capy.label(.{ .alignment = .Left, .text = "File Settings" }),
+        capy.checkBox(.{ .label = "Automatically create backup files", .checked = true }),
+        capy.label(.{ .alignment = .Left, .text = "Ver 0.0.1 ALPHA" }),
     });
 
     const tab_lin = capy.tab(.{ .label = "Linear" }, cont_lin);
@@ -149,19 +187,6 @@ pub fn main() !void {
     const main_cont = try capy.column(.{ .expand = .Fill }, .{ sv_graph, tab_cont });
 
     window.setTitle("SV Buddy");
-
-    var target_file: osufile.OsuFile = undefined;
-    try target_file.init("/home/koishi/Programming/Zig/SVUI/test_files/quarks.osu");
-    defer target_file.deinit();
-
-    const loc = try target_file.extentsOfSection(787, 4000, sv.TimingPoint);
-
-    var tp = try com.create(sv.TimingPoint);
-    _ = try osufile.load().timingPointArray(target_file.file.?, loc[0], loc[2], &tp);
-
-    try sv.linear(tp, 5.0, 7.5, 304);
-
-    try target_file.placeSection(loc[0], loc[1], tp, .replace);
 
     try window.set(main_cont);
 
