@@ -18,13 +18,15 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
     const parent_name = parent_wgt.widget.?.name.get() orelse unreachable;
 
     var i: usize = 2;
-    var p: usize = 0;
+    var p: usize = 1;
     var max: usize = 0;
 
-    var params = try std.heap.raw_c_allocator.alloc([]u8, 7);
-    params[6] = try std.heap.raw_c_allocator.alloc(u8, 1);
-    //defer std.heap.raw_c_allocator.free(params[6]);
-    defer std.heap.raw_c_allocator.free(params);
+    // params[0] is always the parent name, params[9] is always the option flag
+    var params = [_][]u8{undefined} ** 10;
+    params[9] = try std.heap.raw_c_allocator.alloc(u8, 1);
+    defer {
+        for (0..10) |k| std.heap.raw_c_allocator.free(params[k]);
+    }
 
     switch (parent_name[0] - '0') {
         1, 2, 5 => max = 8,
@@ -52,7 +54,10 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         else => unreachable,
     }
 
-    params[6][0] = OPTION_FLAG; // This should always be the last param
+    params[0] = try std.heap.raw_c_allocator.alloc(u8, parent_name.len);
+    @memcpy(params[0], parent_name);
+
+    params[9][0] = OPTION_FLAG; // This should always be the last param
 
     while (i <= max) : (i += 2) {
         const text_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.TextField);
@@ -63,11 +68,7 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
     }
 
     switch (parent_name[0] - '0') {
-        1 => try backend.linear(CURR_FILE, params),
-        2 => try backend.exponential(CURR_FILE, params),
-        3 => try backend.sinusoidal(CURR_FILE, params),
-        //4 => try backend.bezier(CURR_FILE, params),
-        5 => try backend.adjust(CURR_FILE, params),
+        1, 2, 3, 5 => try backend.applyFn(CURR_FILE, params),
         6 => {
             CURR_FILE = try backend.initTargetFile(params);
             if (CURR_FILE) |fp| {
@@ -77,8 +78,6 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         },
         else => unreachable,
     }
-
-    btn.setLabel("Applied");
 }
 
 pub fn main() !void {
@@ -130,6 +129,8 @@ pub fn main() !void {
         capy.textField(.{}),
         capy.label(.{ .alignment = .Left, .text = "Cycles" }),
         capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "Cycles" }),
+        capy.textField(.{}),
         //capy.checkBox(.{ .label = "Bounded Random" }),
     });
 
@@ -169,7 +170,7 @@ pub fn main() !void {
         capy.label(.{ .alignment = .Left, .text = "SV Settings" }),
         capy.checkBox(.{ .label = "Snap SV to notes", .checked = true }),
         capy.checkBox(.{ .label = "Normalize SV over BPM changes", .checked = true }),
-        capy.checkBox(.{ .label = "Overwrite all previous SV", .checked = false }),
+        capy.checkBox(.{ .label = "Overwrite ALL previous SV (this includes uninherited points)", .checked = false }),
         capy.label(.{ .alignment = .Left, .text = "File Settings" }),
         capy.checkBox(.{ .label = "Automatically create backup files", .checked = true }),
         capy.expanded(
@@ -215,7 +216,7 @@ pub fn main() !void {
 
     //const REKT = capy.rect(.{ .name = "background-rectangle", .color = capy.Color.blue }), // capy.Color.transparent
     const main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
-        CURR_FILE_LABEL.?,
+        CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
         TEST_IMG,
         tab_cont,
     });

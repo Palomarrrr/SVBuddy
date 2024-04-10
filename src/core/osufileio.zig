@@ -242,6 +242,7 @@ pub const OsuFile = struct {
 
         try self.file.?.seekTo(self.section_offsets[5]);
 
+        // FIXME: this needs offset of line AFTER start s.t. sving a section beginning on a barline at the start of a song doesnt die
         while (try self.file.?.getPos() <= offset) {
             bytes_read = try self.file.?.readAll(&buffer);
             _for: for (buffer, 0..buffer.len) |c, i| {
