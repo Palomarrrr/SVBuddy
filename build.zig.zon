@@ -3,10 +3,21 @@
     .version = "0.0.0",
     .paths = .{ "."},
     .dependencies = .{ .capy = .{
-        .url = "https://github.com/capy-ui/capy/archive/4d1778feba39949fb2569379b8ac4aabf4842478.tar.gz",
-        .hash = "12209f37ef449d9324234d06dffe240def0eaa86a7d1492c65a6122124014d71ce68",
         //If you want to use the most current version of the master branch, use the url below.
         //Delete the '.hash = "...",'. Run 'zig build'. It will fail, providing you with the uptodate hash.
-        //.url = "https://github.com/capy-ui/capy/archive/refs/heads/master.tar.gz",
-    } },
+        .hash = "1220fc4bcc73de310d77b7000e5df0f51c1dfbe7f1f2a875148334834a4e4450611e",
+        .url = "https://github.com/capy-ui/capy/archive/refs/heads/master.tar.gz",
+    },
+    .@"zig-objc" = .{
+        .url = "https://github.com/mitchellh/zig-objc/archive/f6ed382b6db296626a9b56dadcf9d7e4fcba71d3.tar.gz",
+        .hash = "1220c94dbcdf5a799ce2b1571978ff3c97bab1341fe329084fcc3c06e5d6375469b9",
+    },
+    .macos_sdk = .{
+        .url = "https://github.com/mitchellh/zig-build-macos-sdk/archive/4186e9fd445d12041651abe59ea5f396499b0844.tar.gz",
+        .hash = "1220bc2612b57b0cfaaecbcac38e3144e5a9362ff668d71eb8334e895047bdbb7148",
+    },
+    .zigimg = .{
+        .url = "https://github.com/zigimg/zigimg/archive/8873f29fc449e1b63400e9f4ad86d3c76204f962.tar.gz",
+        .hash = "122019f6439545235af116d0d8eb81fde1ff05fdb070da57c723772c557f84c5bf39",
+    },},
 }

@@ -39,6 +39,7 @@ pub const OsuFile = struct {
     curr_offsets: [7]usize,
 
     // Basically a constructor
+    // TODO: MAKE THIS CROSS PLATFORM | REPLACE ALL '/' WITH SOME DYNAMIC SHIT
     pub fn init(self: *OsuFile, path: []const u8) !void {
         if (std.ascii.eqlIgnoreCase(path, "NONE")) return OsuFileIOError.FileDNE;
 
@@ -602,7 +603,6 @@ pub fn load() type {
                 }
                 @memset(&buffer, 0); // Clear the buffer
             }
-
             return try file.getPos() - 1; // Return the last position
         }
     };

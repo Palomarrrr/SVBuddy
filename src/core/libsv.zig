@@ -196,7 +196,7 @@ pub fn sinusoidal(sv_arr: []TimingPoint, sv_trough: f32, sv_peak: f32, n_cycles:
 //       try to match the values from the output to the given points
 //       ... or you could just try to interpolate any missing values
 // Also try to just make this two 2D vectors... I feel like its easier to understand and visualize as that instead of 4 points
-pub fn cubicBezier(sv_arr: []TimingPoint, p1: *[2]f32, p2: *[2]f32, p3: *[2]f32, p4: *[2]f32) !void {
+pub fn bezier(sv_arr: []TimingPoint, p1: *[2]f32, p2: *[2]f32, p3: *[2]f32, p4: *[2]f32) !void {
 
     // Turn the array indexes into 0 -> 1 values
     p1[0] = p1[0] / @as(f32, @floatFromInt(sv_arr.len));
