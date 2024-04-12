@@ -3,6 +3,7 @@ const math = std.math;
 const time = std.time;
 const heap = std.heap;
 const fmt = std.fmt;
+const ascii = std.ascii;
 const rand = std.rand.Random;
 const RAND_GEN = std.rand.DefaultPrng;
 
@@ -12,6 +13,10 @@ const sv = @import("./libsv.zig");
 const stdout_file = std.io.getStdOut().writer();
 var bw = std.io.bufferedWriter(stdout_file);
 const stdout = bw.writer();
+
+pub const HitObjError = error{
+    IncompleteLine,
+};
 
 //**********************************************************
 //                        STRUCTS
@@ -24,14 +29,57 @@ pub const HitObject = struct {
     time: i32 = 0,
     type: u8 = 0,
     hitSound: u8 = 0,
-    objectParams: [200]u8 = undefined, // I'm guessing ill just make this a string and store the field like that since the formatting is fucked
+    objectParams: []u8,
 
     // fields to keep track of the shit we've done
     effects: u16 = 0,
 
     pub fn toStr(self: *const HitObject) ![]u8 {
-        //return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
-        return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},end\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
+        return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
+        //return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},end\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
+    }
+
+    pub fn fromStr(self: *HitObject, str: []u8) !void {
+        std.debug.print("GOT: `{s}`\n", .{str});
+        var field: u8 = 0;
+        var last: usize = 0;
+
+        const eol = if (ascii.indexOfIgnoreCase(str, &[_]u8{ '\r', '\n' })) |ret| ret else str.len;
+        std.debug.print("LEN: {}\n", .{eol});
+
+        while (field < 5) : (field += 1) {
+            const ind = ascii.indexOfIgnoreCasePos(str, last, &[_]u8{','}) orelse return HitObjError.IncompleteLine;
+            std.debug.print("`{s}`\n", .{str[last..ind]});
+            switch (field) {
+                0 => {
+                    self.x = try fmt.parseInt(i32, str[last..ind], 10);
+                },
+                1 => {
+                    self.y = try fmt.parseInt(i32, str[last..ind], 10);
+                },
+                2 => {
+                    self.time = try fmt.parseInt(i32, str[last..ind], 10);
+                },
+                3 => {
+                    self.type = try fmt.parseUnsigned(u8, str[last..ind], 10);
+                },
+                4 => {
+                    self.hitSound = try fmt.parseUnsigned(u8, str[last..ind], 10);
+                },
+                else => {
+                    return HitObjError.IncompleteLine;
+                },
+            }
+            last = ind + 1;
+        }
+        std.debug.print("`{s}`\n", .{str[last..eol]});
+        self.objectParams = try heap.raw_c_allocator.alloc(u8, (eol - last));
+        @memcpy(self.objectParams, str[last..eol]);
+        std.debug.print("MADE:{s}\n", .{try self.toStr()});
+    }
+
+    pub fn deinit(self: *HitObject) void {
+        heap.raw_c_allocator.free(self.objectParams);
     }
 };
 

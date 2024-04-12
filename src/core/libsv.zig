@@ -3,6 +3,7 @@ const math = std.math;
 const time = std.time;
 const heap = std.heap;
 const fmt = std.fmt;
+const ascii = std.ascii;
 const rand = std.rand.Random;
 const RAND_GEN = std.rand.DefaultPrng;
 const hitobj = @import("./hitobj.zig");
@@ -14,6 +15,7 @@ const stdout = bw.writer();
 
 pub const TimingPointError = error{
     InvalidTimingPointValue,
+    IncompleteLine,
 };
 
 //**********************************************************
@@ -31,7 +33,7 @@ pub const TimingPoint = struct {
     sampleSet: u8 = 1,
     /// This is pretty self explanitory
     volume: u8 = 100,
-    /// If the point is inherited(1) or not(0). This is a u1 instead of a bool to make shit easier
+    /// If the point is inherited(0) or not(1). This is a u1 instead of a bool to make shit easier
     is_inh: u1 = 0,
     /// effect bitflag -- More docs on this later
     effects: u8 = 0,
@@ -42,7 +44,62 @@ pub const TimingPoint = struct {
     pub fn valueToHumanReadable(self: *const TimingPoint) f32 {
         return if (self.is_inh == 1) 60000.0 / self.value else -100.0 / self.value;
     }
+    pub fn fromStr(self: *TimingPoint, str: []u8) !void {
+        std.debug.print("GOT: `{s}`\n", .{str});
+        var field: u8 = 0;
+        var last: usize = 0;
+
+        const eol = if (ascii.indexOfIgnoreCase(str, &[_]u8{ '\r', '\n' })) |ret| ret else return TimingPointError.IncompleteLine;
+
+        while (field < 7) : (field += 1) {
+            const ind = ascii.indexOfIgnoreCasePos(str, last, &[_]u8{','}) orelse return TimingPointError.IncompleteLine;
+            std.debug.print("`{s}`\n", .{str[last..ind]});
+            switch (field) {
+                0 => {
+                    self.time = try fmt.parseInt(i32, str[last..ind], 10);
+                },
+                1 => {
+                    self.value = try fmt.parseFloat(f32, str[last..ind]);
+                },
+                2 => {
+                    self.meter = try fmt.parseUnsigned(u8, str[last..ind], 10);
+                },
+                3 => {
+                    self.sampleSet = try fmt.parseUnsigned(u8, str[last..ind], 10);
+                },
+                4 => blk: {
+                    break :blk;
+                },
+                5 => {
+                    self.volume = try fmt.parseUnsigned(u8, str[last..ind], 10);
+                },
+                6 => {
+                    self.is_inh = try fmt.parseUnsigned(u1, str[last..ind], 10);
+                },
+                else => {
+                    return TimingPointError.IncompleteLine;
+                },
+            }
+            last = ind + 1;
+        }
+        std.debug.print("`{s}`\n", .{str[last..eol]});
+        self.effects = try fmt.parseUnsigned(u8, str[last..eol], 10);
+        std.debug.print("MADE:{s}\n", .{try self.toStr()});
+    }
+    // MAJOR-FIXME: FOR SOME REASON FIELDS 3,4,6,8 ALL DISPLAY 170 INSTEAD OF 0
 };
+//**********************************************************
+//                      VOLUME TOOLS
+//**********************************************************
+
+pub fn volumeLinear(sv_arr: []TimingPoint, vol_start: u8, vol_end: u8) !void {
+    var curr_vol = vol_start;
+    const vol_slope: u8 = ((vol_end - vol_start) / sv_arr.len); // FIXME: This will error. need to do like @trunc or some shit like that
+    for (0..sv_arr.len) |i| {
+        sv_arr[i].volume = curr_vol;
+        curr_vol += vol_slope;
+    }
+}
 
 //**********************************************************
 //                        BPM TOOLS
@@ -63,9 +120,15 @@ pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, 
         if (hobj_arr.len > getNumInherited(sv_arr.*)) // Just incase we are going over a section that already has some sv
             sv_arr.* = try heap.raw_c_allocator.realloc(sv_arr.*, hobj_arr.len + (sv_arr.len - getNumInherited(sv_arr.*))); // Make sure to not count the uninherited points
 
-        for (0..hobj_arr.len) |i| {
+        for (0..hobj_arr.len) |i| { // TODO: make this not place if there is a hobj on the same
             if (sv_arr.*[i].is_inh == 0) {
                 sv_arr.*[i].time = hobj_arr[i].time;
+                //sv_arr.*[i].value = 1.0;
+                sv_arr.*[i].meter = 4.0;
+                sv_arr.*[i].sampleSet = 1;
+                sv_arr.*[i].volume = 100;
+                sv_arr.*[i].effects = 0;
+                sv_arr.*[i].is_inh = 0;
             }
         }
     } else { // No hitobjs given

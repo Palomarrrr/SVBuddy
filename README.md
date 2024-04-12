@@ -2,7 +2,7 @@
 The next generation of shitty sv tools
 
 ## Building
-**Target Zig Version: zig `0.12.0-dev.2063+804cee3b9` ([2024.1.0-mach](https://machengine.org/about/nominated-zig/))**
+**Target Zig Version: zig `0.12.0-dev.3180+83e578a18`**
 
 If you wish to run the app simply execute
 ```sh

@@ -35,27 +35,40 @@ pub fn applyFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         } else {
             var hobjs = try com.create(hobj.HitObject);
             defer std.heap.raw_c_allocator.free(hobjs);
-            _ = try osufile.load().hitObjArray(target.*.file.?, ext_hobj[0], ext_hobj[2], &hobjs); // Fetch so that we can create a section off of them
+            //_ = try osufile.load().hitObjArray(target.*.file.?, ext_hobj[0], ext_hobj[2], &hobjs); // Fetch so that we can create a section off of them
+            _ = try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs);
             try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm);
         }
 
         if (ext_tp[2] != 0 and (params[9][0] & 0x4) == 0) { // If points existed previously | this is only important if we have uninherited timing points
             var tp2 = try com.create(sv.TimingPoint);
-            _ = try osufile.load().timingPointArray(target.*.file.?, ext_tp[0], ext_tp[2], &tp2);
+            //_ = try osufile.load().timingPointArray(target.*.file.?, ext_tp[0], ext_tp[2], &tp2);
+            _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tp2);
             defer std.heap.raw_c_allocator.free(tp2);
 
             const n_uinh = tp2.len - sv.getNumInherited(tp2);
 
             if (n_uinh != 0) { // if there are uninherited points in the section
-                var uinh = try std.heap.raw_c_allocator.alloc(sv.TimingPoint, n_uinh); // build an array w/ only uninherited
+                var uinh = try std.heap.raw_c_allocator.alloc(sv.TimingPoint, n_uinh * 2); // build an array w/ only uninherited
                 var i: usize = 0;
                 for (tp2) |p| {
                     if (p.is_inh == 1) {
                         uinh[i] = p;
-                        i += 1;
+                        uinh[i + 1] = sv.TimingPoint{ // TODO: DONT GENERATE IF NOTE EXISTS ON THIS SINCE THERE WILL ALREADY BE A INH POINT THERE
+                            .time = p.time,
+                            .is_inh = 0,
+                            .value = -1,
+                            .meter = p.meter,
+                            .volume = p.volume,
+                            .effects = p.effects,
+                            .sampleSet = p.sampleSet,
+                        };
+                        i += 2;
                     }
                 }
+                for (uinh) |u| std.debug.print("{s}", .{try u.toStr()});
                 try sv.mergeSvArrs(&tp, uinh); // Merge the two sv arrs
+                for (tp) |u| std.debug.print("{s}", .{try u.toStr()});
             }
         }
 

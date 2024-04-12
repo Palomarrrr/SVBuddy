@@ -5,6 +5,27 @@ const osufile = @import("./core/osufileio.zig");
 const com = @import("./util/common.zig");
 const backend = @import("./util/backend_wrappers.zig");
 
+//=============================================
+// TODO
+//=============================================
+//  * IMPLEMENT VOLUME CHANGES
+//  * FIX THE PROBLEM WITH VALUES 3,4,6,8 DEFAULTING TO 170
+//  * ADD KIAI CHECKBOX / AUTO KIAI ON AND OFF | SAME COULD GO FOR VOLUME
+//  * IMPLEMENT SONG PICKER W/ SOME KIND OF FUZZY SEARCH
+//=============================================
+// LAYOUT IDEA
+//=============================================
+// -----------on startup
+//      top: column container w/ search bar and scrollable menu for song select
+//              *  RESEARCH: look if you can read process data and find the current song that way
+//      bottom: settings tab
+// -----------post song select
+//      top: either a graph showing sv and bpm changes throughout the map
+//           or some kind of visual helper for the effect being applied (this might just become its own little pop up window)
+//      bottom: hopefully a better interface than what i have now.
+//              *  RESEARCH: look at other tools for inspiration
+//=============================================
+
 // This is required for your app to build to WebAssembly and other particular architectures
 pub usingnamespace capy.cross_platform;
 
@@ -86,9 +107,6 @@ pub fn main() !void {
     var window = try capy.Window.init();
     defer window.deinit();
 
-    const target_path: ?[]u8 = null;
-    _ = target_path;
-
     const cont_lin = try capy.column(.{ .name = "1" }, .{
         capy.button(.{ .label = "Apply Effect", .onclick = @ptrCast(&buttonClick) }),
         capy.label(.{ .alignment = .Left, .text = "Start Time" }),
@@ -129,8 +147,8 @@ pub fn main() !void {
         capy.textField(.{}),
         capy.label(.{ .alignment = .Left, .text = "Cycles" }),
         capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Cycles" }),
-        capy.textField(.{}),
+        //capy.label(.{ .alignment = .Left, .text = "Cycles" }),
+        //capy.textField(.{}),
         //capy.checkBox(.{ .label = "Bounded Random" }),
     });
 
@@ -196,23 +214,12 @@ pub fn main() !void {
     //const tab_cont = capy.tabs(.{ tab_lin, tab_exp, tab_sin, tab_bez, tab_adj, tab_set });
     const tab_cont = capy.tabs(.{ tab_lin, tab_exp, tab_sin, tab_adj, tab_set });
 
-    // LAYOUT IDEA
-    // -----------on startup
-    //      top: column container w/ search bar and scrollable menu for song select
-    //              *  RESEARCH: look if you can read process data and find the current song that way
-    //      bottom: settings tab
-    // -----------post song select
-    //      top: either a graph showing sv and bpm changes throughout the map
-    //           or some kind of visual helper for the effect being applied (this might just become its own little pop up window)
-    //      bottom: hopefully a better interface than what i have now.
-    //              *  RESEARCH: look at other tools for inspiration
-
     //const menu_bar = capy.menu(.{ .label = "menu" }, .{ tab_lin, tab_exp, tab_sin, tab_adj, tab_set }); // FIGURE OUT WHAT THIS DOES
     //const img_CFG = try capy.ImageData.fromFile(std.heap.raw_c_allocator, "../glubby.png");
     //_ = img_CFG;
 
     //const main_cont = try capy.column(.{ .expand = .Fill }, .{tab_cont});
-    const TEST_IMG = capy.image(.{ .url = "https://ieatrocks4fun.pages.dev/images/svbuddy.png", .scaling = .Fit });
+    const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/websites/ieatrocks4fun/images/svbuddy.png", .scaling = .Fit });
 
     //const REKT = capy.rect(.{ .name = "background-rectangle", .color = capy.Color.blue }), // capy.Color.transparent
     const main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
