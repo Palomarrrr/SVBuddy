@@ -104,7 +104,7 @@ pub const Metadata = struct {
         std.heap.raw_c_allocator.free(self.creator);
         std.heap.raw_c_allocator.free(self.version);
         std.heap.raw_c_allocator.free(self.source);
-        //std.heap.raw_c_allocator.free(self.tags);
+        std.heap.raw_c_allocator.free(self.tags); // FIXME: idk if this works
     }
 
     pub fn genBackupVerName(self: *Metadata) ![]u8 {

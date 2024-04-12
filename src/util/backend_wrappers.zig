@@ -10,14 +10,13 @@ pub fn applyFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
     if (opt_targ) |target| {
 
         // Refresh the file incase any changes were made
-        target.*.file.?.close();
-        target.*.file.? = try std.fs.openFileAbsolute(target.*.path, .{ .mode = .read_write });
+        try target.*.refresh();
 
         const start: i32 = try timing.timeStrToTick(params[1]);
         const end: i32 = try timing.timeStrToTick(params[2]);
         const val1: f32 = try std.fmt.parseFloat(f32, params[3]);
         const val2: f32 = try std.fmt.parseFloat(f32, params[4]);
-        const val3: f32 = std.fmt.parseFloat(f32, params[5]) catch 0; // FIXME: THIS FAILS
+        const val3: f32 = std.fmt.parseFloat(f32, params[5]) catch 0; // FIXME: THIS FAILS -- I think this is fixed?
         const val4: f32 = std.fmt.parseFloat(f32, params[6]) catch 0;
         _ = val4;
 
@@ -36,7 +35,7 @@ pub fn applyFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             var hobjs = try com.create(hobj.HitObject);
             defer std.heap.raw_c_allocator.free(hobjs);
             //_ = try osufile.load().hitObjArray(target.*.file.?, ext_hobj[0], ext_hobj[2], &hobjs); // Fetch so that we can create a section off of them
-            _ = try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs);
+            try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs);
             try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm);
         }
 

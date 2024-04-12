@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const fs = std.fs;
 const heap = std.heap;
 const fmt = std.fmt;
@@ -77,6 +78,11 @@ pub const OsuFile = struct {
         }
     }
 
+    pub fn refresh(self: *OsuFile) !void {
+        self.file.?.close();
+        self.file = try fs.openFileAbsolute(self.path, .{ .mode = .read_write });
+    }
+
     // Write changes to disk
     pub fn save(self: *OsuFile) !void {
         if (self.file == null) return OsuFileIOError.FileDNE;
@@ -91,7 +97,14 @@ pub const OsuFile = struct {
         var len = self.path.len;
 
         for (0..len) |i| {
-            if (self.path[self.path.len - 1 - i] == '/') break;
+            switch (builtin.os.tag) {
+                .windows => {
+                    if (self.path[self.path.len - 1 - i] == '\\') break;
+                },
+                else => {
+                    if (self.path[self.path.len - 1 - i] == '/') break;
+                },
+            }
             len -= 1;
         }
 
@@ -305,7 +318,7 @@ pub const OsuFile = struct {
     }
 
     // TODO: remove append and just use replace.you can do the same thing as it by doing placeSection(end_of_sec, end_of_sec, arr)
-    pub fn placeSection(self: *OsuFile, start: u64, end: u64, arr: anytype, mode: enum { replace, append }) !void {
+    pub fn placeSection(self: *OsuFile, start: u64, end: u64, arr: anytype) !void {
         if (self.file == null) return OsuFileIOError.FileDNE;
 
         // This is fucked... just let me use an if statement please
@@ -317,7 +330,14 @@ pub const OsuFile = struct {
         var len = self.path.len;
 
         for (0..len) |i| {
-            if (self.path[self.path.len - 1 - i] == '/') break;
+            switch (builtin.os.tag) {
+                .windows => {
+                    if (self.path[self.path.len - 1 - i] == '\\') break;
+                },
+                else => {
+                    if (self.path[self.path.len - 1 - i] == '/') break;
+                },
+            }
             len -= 1;
         }
 
@@ -343,7 +363,7 @@ pub const OsuFile = struct {
             _ = try tmpfp.writeAll(try a.toStr());
         }
 
-        if (mode == .replace) try self.file.?.seekTo(end); // pick at the end of the section we want to replace
+        try self.file.?.seekTo(end); // pick at the end of the section we want to replace
 
         while (l == 1) {
             l = try self.file.?.readAll(&t);
@@ -360,6 +380,8 @@ pub const OsuFile = struct {
         try self.findSectionOffsets();
     }
 
+    // TODO: While this looks nicer than the previous implementation...
+    //       This is really unoptimized and runs in like factorial time or some shit
     pub fn findEndOfSectionOffset(self: *OsuFile, offset: u64) !u64 {
         if (self.file == null) return OsuFileIOError.FileDNE;
         var buffer = [_]u8{0} ** 64;
@@ -431,7 +453,8 @@ pub const OsuFile = struct {
         }
     }
 
-    pub fn loadObjArr(self: *OsuFile, offset: u64, size: usize, arr: anytype) !u64 {
+    // Strongly typed languages when `anytype`
+    pub fn loadObjArr(self: *OsuFile, offset: u64, size: usize, arr: anytype) !void {
         _ = switch (@TypeOf(arr)) {
             *[]sv.TimingPoint, *[]hitobj.HitObject => 0,
             else => unreachable,
@@ -457,7 +480,13 @@ pub const OsuFile = struct {
 
             try self.file.?.seekBy(0 - @as(i64, @intCast(bytes_read - eol - 2)));
         }
-        return self.file.?.getPos();
+        //return self.file.?.getPos();
+        // Set the proper current offset based off the type of array given
+        switch (@TypeOf(arr)) {
+            *[]sv.TimingPoint => self.curr_offsets[5] = try self.file.?.getPos(),
+            *[]hitobj.HitObject => self.curr_offsets[6] = try self.file.?.getPos(),
+            else => unreachable,
+        }
     }
 };
 

@@ -189,6 +189,11 @@ pub fn main() !void {
         capy.checkBox(.{ .label = "Snap SV to notes", .checked = true }),
         capy.checkBox(.{ .label = "Normalize SV over BPM changes", .checked = true }),
         capy.checkBox(.{ .label = "Overwrite ALL previous SV (this includes uninherited points)", .checked = false }),
+        // Adjust click handler to this and add these options
+        // IDEA: maybe have this save to a settings.zon file?
+        //capy.checkBox(.{ .label = "Add SV to all timing points in the effect", .checked = false }),
+        //capy.checkBox(.{ .label = "Add SV to all barlines in the effect", .checked = false }), // Will have to get offset of each timing point and then find every barline that would exist in it
+        //capy.checkBox(.{ .label = "Points inherit effects from previous points", .checked = false }), // Will have to get offset of each timing point and then find every barline that would exist in it
         capy.label(.{ .alignment = .Left, .text = "File Settings" }),
         capy.checkBox(.{ .label = "Automatically create backup files", .checked = true }),
         capy.expanded(
