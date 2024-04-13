@@ -3,7 +3,7 @@ const std = @import("std");
 const capy = @import("capy");
 const osufile = @import("./core/osufileio.zig");
 const com = @import("./util/common.zig");
-const backend = @import("./util/backend_wrappers.zig");
+const wrapper = @import("./util/backend_wrappers.zig");
 
 //=============================================
 // TODO
@@ -44,9 +44,9 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
 
     // params[0] is always the parent name, params[9] is always the option flag
     var params = [_][]u8{undefined} ** 10;
-    params[9] = try std.heap.raw_c_allocator.alloc(u8, 1);
+    params[9] = try std.heap.page_allocator.alloc(u8, 1);
     defer {
-        for (0..10) |k| std.heap.raw_c_allocator.free(params[k]);
+        for (0..10) |k| std.heap.page_allocator.free(params[k]);
     }
 
     switch (parent_name[0] - '0') {
@@ -75,7 +75,7 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         else => unreachable,
     }
 
-    params[0] = try std.heap.raw_c_allocator.alloc(u8, parent_name.len);
+    params[0] = try std.heap.page_allocator.alloc(u8, parent_name.len);
     @memcpy(params[0], parent_name);
 
     params[9][0] = OPTION_FLAG; // This should always be the last param
@@ -83,18 +83,18 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
     while (i <= max) : (i += 2) {
         const text_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.TextField);
         const text_out = text_wgt.*.text.get();
-        params[p] = try std.heap.raw_c_allocator.alloc(u8, text_out.len);
+        params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
         @memcpy(params[p], text_out);
         p += 1;
     }
 
     switch (parent_name[0] - '0') {
-        1, 2, 3, 5 => try backend.applyFn(CURR_FILE, params),
+        1, 2, 3, 5 => try wrapper.applyFn(CURR_FILE, params),
         6 => {
-            CURR_FILE = try backend.initTargetFile(params);
+            CURR_FILE = try wrapper.initTargetFile(params);
             if (CURR_FILE) |fp| {
                 // This most likely leaks memory... I can't find a way to fix it...
-                CURR_FILE_LABEL.?.*.text.set(try std.fmt.allocPrintZ(std.heap.raw_c_allocator, "Editing: {s} - {s} | [{s}]", .{ fp.metadata.artist, fp.metadata.title, fp.metadata.version }));
+                CURR_FILE_LABEL.?.*.text.set(try std.fmt.allocPrintZ(std.heap.page_allocator, "Editing: {s} - {s} | [{s}]", .{ fp.metadata.artist, fp.metadata.title, fp.metadata.version }));
             }
         },
         else => unreachable,
@@ -196,15 +196,15 @@ pub fn main() !void {
         //capy.checkBox(.{ .label = "Points inherit effects from previous points", .checked = false }), // Will have to get offset of each timing point and then find every barline that would exist in it
         capy.label(.{ .alignment = .Left, .text = "File Settings" }),
         capy.checkBox(.{ .label = "Automatically create backup files", .checked = true }),
-        capy.expanded(
-            capy.row(.{}, .{
-                capy.label(.{ .alignment = .Left, .text = "Ver 0.0.1 " }),
-                capy.alignment(
-                    .{ .x = 1, .y = 1 },
-                    capy.image(.{ .url = "https://avatars.githubusercontent.com/u/88110129?v=4", .scaling = .Fit }), // TODO make this A: NOT A FUCKING URL and B: A STATIC SIZE
-                ),
-            }),
-        ),
+        //capy.expanded(
+        //capy.row(.{}, .{
+        capy.label(.{ .alignment = .Left, .text = "Ver 0.0.1 " }),
+        //capy.alignment(
+        //.{ .x = 1, .y = 1 },
+        //capy.image(.{ .url = "https://avatars.githubusercontent.com/u/88110129?v=4", .scaling = .Fit }), // TODO make this A: NOT A FUCKING URL and B: A STATIC SIZE
+        //),
+        //}),
+        //),
     });
 
     CURR_FILE_LABEL = capy.label(.{ .alignment = .Left, .text = "No file selected..." });
@@ -224,12 +224,12 @@ pub fn main() !void {
     //_ = img_CFG;
 
     //const main_cont = try capy.column(.{ .expand = .Fill }, .{tab_cont});
-    const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/websites/ieatrocks4fun/images/svbuddy.png", .scaling = .Fit });
+    //const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/websites/ieatrocks4fun/images/svbuddy.png", .scaling = .Fit });
 
     //const REKT = capy.rect(.{ .name = "background-rectangle", .color = capy.Color.blue }), // capy.Color.transparent
     const main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
         CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
-        TEST_IMG,
+        //TEST_IMG,
         tab_cont,
     });
 

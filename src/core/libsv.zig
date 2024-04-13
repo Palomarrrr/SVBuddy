@@ -39,7 +39,7 @@ pub const TimingPoint = struct {
     effects: u8 = 0,
 
     pub fn toStr(self: *const TimingPoint) ![]u8 {
-        return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{d:.12},{},{},0,{},{},{}\r\n", .{ self.time, self.value, self.meter, self.sampleSet, self.volume, self.is_inh, self.effects });
+        return try std.fmt.allocPrint(std.heap.page_allocator, "{},{d:.12},{},{},0,{},{},{}\r\n", .{ self.time, self.value, self.meter, self.sampleSet, self.volume, self.is_inh, self.effects });
     }
     pub fn valueToHumanReadable(self: *const TimingPoint) f32 {
         return if (self.is_inh == 1) 60000.0 / self.value else -100.0 / self.value;
@@ -118,7 +118,7 @@ pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, 
     if (obj_arr) |hobj_arr| { // If we are putting sv over a section with hitobjs
 
         if (hobj_arr.len > getNumInherited(sv_arr.*)) // Just incase we are going over a section that already has some sv
-            sv_arr.* = try heap.raw_c_allocator.realloc(sv_arr.*, hobj_arr.len + (sv_arr.len - getNumInherited(sv_arr.*))); // Make sure to not count the uninherited points
+            sv_arr.* = try std.heap.page_allocator.realloc(sv_arr.*, hobj_arr.len + (sv_arr.len - getNumInherited(sv_arr.*))); // Make sure to not count the uninherited points
 
         for (0..hobj_arr.len) |i| { // TODO: make this not place if there is a hobj on the same
             if (sv_arr.*[i].is_inh == 0) {
@@ -137,7 +137,7 @@ pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, 
         const inc: f32 = 60000.0 / bpm / @as(f32, @floatFromInt(snap));
         std.debug.print("inc:{}\n", .{inc});
 
-        sv_arr.* = try heap.raw_c_allocator.alloc(TimingPoint, @intCast(@divTrunc((end - start), @as(i32, @intFromFloat(inc))) + 1)); // Allocate the number of points we need
+        sv_arr.* = try std.heap.page_allocator.alloc(TimingPoint, @intCast(@divTrunc((end - start), @as(i32, @intFromFloat(inc))) + 1)); // Allocate the number of points we need
 
         while (p < sv_arr.*.len) : (p += 1) {
             sv_arr.*[p].time = @intFromFloat(@round(i));
@@ -147,7 +147,7 @@ pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, 
 }
 
 pub fn pruneUnusedSv(sv_arr: *[]TimingPoint, obj_arr: []hitobj.HitObject) !void { // Im just gonna assume user gave a place that has actual notes
-    var new_sv_arr: []TimingPoint = try heap.raw_c_allocator.alloc(TimingPoint, obj_arr.len + (sv_arr.*.len - getNumInherited(sv_arr.*)));
+    var new_sv_arr: []TimingPoint = try std.heap.page_allocator.alloc(TimingPoint, obj_arr.len + (sv_arr.*.len - getNumInherited(sv_arr.*)));
     var i: usize = 0;
     var j: usize = 0;
     var k: usize = 0;
@@ -165,12 +165,12 @@ pub fn pruneUnusedSv(sv_arr: *[]TimingPoint, obj_arr: []hitobj.HitObject) !void 
             j += 1;
         }
     }
-    heap.raw_c_allocator.free(sv_arr.*);
+    std.heap.page_allocator.free(sv_arr.*);
     sv_arr.* = new_sv_arr;
 }
 
 pub fn mergeSvArrs(dest: *[]TimingPoint, src: []TimingPoint) !void {
-    var retarr: []TimingPoint = try std.heap.raw_c_allocator.alloc(TimingPoint, dest.*.len + src.len);
+    var retarr: []TimingPoint = try std.heap.page_allocator.alloc(TimingPoint, dest.*.len + src.len);
 
     var i: usize = 0;
     var j: usize = 0;
@@ -350,7 +350,7 @@ pub fn boundedRandom() type {
 
         // Internal function to randomize a number between two values
         inline fn randPoint(pos_bound: f32, neg_bound: f32, curr_point_val: f32) !f32 {
-            var rnd = RAND_GEN.init(@as(u64, @truncate(math.absCast(time.nanoTimestamp())))); // Seed the rng (I LOVE GIGA STRICT TYPING)
+            var rnd = RAND_GEN.init(@as(usize, @truncate(math.absCast(time.nanoTimestamp())))); // Seed the rng (I LOVE GIGA STRICT TYPING)
             const rand_float: f32 = rnd.random().float(f32); // get a random float 0-1
             return curr_point_val + (@as(f32, try math.mod(f32, rand_float, pos_bound - neg_bound)) + neg_bound);
         }

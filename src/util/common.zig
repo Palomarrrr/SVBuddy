@@ -1,5 +1,5 @@
 const std = @import("std");
 
 pub inline fn create(T: anytype) ![]T {
-    return try std.heap.raw_c_allocator.alloc(T, 0);
+    return try std.heap.page_allocator.alloc(T, 0);
 }

@@ -33,7 +33,7 @@ pub fn applyFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             try sv.createNewSVSection(&tp, null, start, end, 12, bpm); // TODO: ADD SNAPPING
         } else {
             var hobjs = try com.create(hobj.HitObject);
-            defer std.heap.raw_c_allocator.free(hobjs);
+            defer std.heap.page_allocator.free(hobjs);
             //_ = try osufile.load().hitObjArray(target.*.file.?, ext_hobj[0], ext_hobj[2], &hobjs); // Fetch so that we can create a section off of them
             try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs);
             try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm);
@@ -43,12 +43,12 @@ pub fn applyFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             var tp2 = try com.create(sv.TimingPoint);
             //_ = try osufile.load().timingPointArray(target.*.file.?, ext_tp[0], ext_tp[2], &tp2);
             _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tp2);
-            defer std.heap.raw_c_allocator.free(tp2);
+            defer std.heap.page_allocator.free(tp2);
 
             const n_uinh = tp2.len - sv.getNumInherited(tp2);
 
             if (n_uinh != 0) { // if there are uninherited points in the section
-                var uinh = try std.heap.raw_c_allocator.alloc(sv.TimingPoint, n_uinh * 2); // build an array w/ only uninherited
+                var uinh = try std.heap.page_allocator.alloc(sv.TimingPoint, n_uinh * 2); // build an array w/ only uninherited
                 var i: usize = 0;
                 for (tp2) |p| {
                     if (p.is_inh == 1) {
@@ -80,16 +80,16 @@ pub fn applyFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             else => unreachable,
         }
 
-        try target.*.placeSection(ext_tp[0], ext_tp[1], tp, .replace); // Place
+        try target.*.placeSection(ext_tp[0], ext_tp[1], tp); // Place
     } else return osufile.OsuFileIOError.FileDNE;
 }
 
 pub fn initTargetFile(params: anytype) !?*osufile.OsuFile {
-    const retval: *osufile.OsuFile = try std.heap.raw_c_allocator.create(osufile.OsuFile);
+    const retval: *osufile.OsuFile = try std.heap.page_allocator.create(osufile.OsuFile);
     try retval.*.init(params[1]);
     if (params[9][0] & 8 != 0) {
         const bckup_path = try retval.*.createBackup();
-        defer std.heap.raw_c_allocator.free(bckup_path);
+        defer std.heap.page_allocator.free(bckup_path);
         std.debug.print("LOG: Created backup file at `{s}`!\n", .{bckup_path});
     }
     return retval;

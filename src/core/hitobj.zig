@@ -35,7 +35,7 @@ pub const HitObject = struct {
     effects: u16 = 0,
 
     pub fn toStr(self: *const HitObject) ![]u8 {
-        return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
+        return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
         //return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},end\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
     }
 
@@ -73,13 +73,13 @@ pub const HitObject = struct {
             last = ind + 1;
         }
         std.debug.print("`{s}`\n", .{str[last..eol]});
-        self.objectParams = try heap.raw_c_allocator.alloc(u8, (eol - last));
+        //self.objectParams = try std.heap.page_allocator.alloc(u8, (eol - last));
         @memcpy(self.objectParams, str[last..eol]);
         std.debug.print("MADE:{s}\n", .{try self.toStr()});
     }
 
     pub fn deinit(self: *HitObject) void {
-        heap.raw_c_allocator.free(self.objectParams);
+        std.heap.page_allocator.free(self.objectParams);
     }
 };
 
@@ -91,7 +91,7 @@ pub const HitObject = struct {
 
 // Need this to return a slice instead of an array. either that or i need to find a good way to turn the result into a slice
 pub fn toBarline(hitobj_array: []HitObject) ![]sv.TimingPoint {
-    const timing_points: []sv.TimingPoint = try heap.raw_c_allocator.alloc(sv.TimingPoint, hitobj_array.len);
+    const timing_points: []sv.TimingPoint = try std.heap.page_allocator.alloc(sv.TimingPoint, hitobj_array.len);
     for (0..hitobj_array.len) |i| {
         if ((hitobj_array[i].type & 0x1) != 1) continue; // Skip non-notes
 

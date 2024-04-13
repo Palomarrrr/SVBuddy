@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const fs = std.fs;
-const heap = std.heap;
+const mem = std.mem;
 const fmt = std.fmt;
 
 const sv = @import("../core/libsv.zig");
@@ -44,7 +44,7 @@ pub const OsuFile = struct {
     pub fn init(self: *OsuFile, path: []const u8) !void {
         if (std.ascii.eqlIgnoreCase(path, "NONE")) return OsuFileIOError.FileDNE;
 
-        self.path = try heap.raw_c_allocator.alloc(u8, path.len);
+        self.path = try std.heap.page_allocator.alloc(u8, path.len);
         @memcpy(self.path, path);
 
         self.file = try fs.openFileAbsolute(self.path, .{ .mode = .read_write });
@@ -54,8 +54,8 @@ pub const OsuFile = struct {
 
         // TODO: This next bit is utterly retarded... how about no... you can do better
         const eos = try self.findEndOfSectionOffset(self.section_offsets[2]);
-        const metadata_sect: []u8 = try std.heap.raw_c_allocator.alloc(u8, eos - self.section_offsets[2]);
-        defer std.heap.raw_c_allocator.free(metadata_sect);
+        const metadata_sect: []u8 = try std.heap.page_allocator.alloc(u8, eos - self.section_offsets[2]);
+        defer std.heap.page_allocator.free(metadata_sect);
 
         try self.file.?.seekTo(self.section_offsets[2]);
         _ = try self.file.?.readAll(metadata_sect);
@@ -67,7 +67,7 @@ pub const OsuFile = struct {
     pub fn deinit(self: *OsuFile) void {
         self.file.?.close();
         self.metadata.deinit();
-        heap.raw_c_allocator.free(self.path);
+        std.heap.page_allocator.free(self.path);
     }
 
     // Reset all offsets and seek to the head of the file
@@ -111,16 +111,16 @@ pub const OsuFile = struct {
         const bckup_v_name = try self.metadata.genBackupVerName();
         const bckup_f_name = try self.metadata.genBackupFileName();
 
-        const tmp_pref: []u8 = try heap.raw_c_allocator.alloc(u8, len);
+        const tmp_pref: []u8 = try std.heap.page_allocator.alloc(u8, len);
         @memcpy(tmp_pref, self.path[0..len]);
-        const tmp_path = try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ tmp_pref, bckup_f_name });
-        //defer heap.raw_c_allocator.free(tmp_path);
+        const tmp_path = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ tmp_pref, bckup_f_name });
+        //defer std.heap.page_allocator.free(tmp_path);
 
         const tmpfp: fs.File = try fs.createFileAbsolute(tmp_path, .{ .read = true, .truncate = true });
 
         // then basically the same procedure as place section but this time with the metadata
 
-        const last_loc = try self.file.?.getPos(); // save this
+        const last_loc: usize = @intCast(try self.file.?.getPos()); // save this
 
         const eos = try self.findEndOfSectionOffset(self.section_offsets[2]);
         try self.file.?.seekTo(0);
@@ -128,7 +128,7 @@ pub const OsuFile = struct {
         var t = [_]u8{0};
 
         // Copy up to the section
-        while (try self.file.?.getPos() <= self.section_offsets[2]) {
+        while (@as(usize, @intCast(try self.file.?.getPos())) <= self.section_offsets[2]) {
             _ = try self.file.?.read(&t);
             _ = try tmpfp.write(&t);
         }
@@ -137,16 +137,16 @@ pub const OsuFile = struct {
 
         // TODO: This is bad
         // Make a function to return a properly formatted string given a field or something
-        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Title:"), self.metadata.title, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("TitleUnicode:"), self.metadata.title_unicode, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Artist:"), self.metadata.artist, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("ArtistUnicode:"), self.metadata.artist_unicode, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Creator:"), self.metadata.creator, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Version:"), bckup_v_name, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Source:"), self.metadata.source, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ @constCast("Tags:"), self.metadata.tags, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try fmt.allocPrint(heap.raw_c_allocator, "BeatmapID:{}\r\n", .{self.metadata.beatmap_id}));
-        _ = try tmpfp.writeAll(try fmt.allocPrint(heap.raw_c_allocator, "BeatmapSetID:{}\r\n", .{self.metadata.set_id}));
+        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Title:"), self.metadata.title, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("TitleUnicode:"), self.metadata.title_unicode, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Artist:"), self.metadata.artist, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("ArtistUnicode:"), self.metadata.artist_unicode, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Creator:"), self.metadata.creator, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Version:"), bckup_v_name, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Source:"), self.metadata.source, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Tags:"), self.metadata.tags, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try fmt.allocPrint(std.heap.page_allocator, "BeatmapID:{}\r\n", .{self.metadata.beatmap_id}));
+        _ = try tmpfp.writeAll(try fmt.allocPrint(std.heap.page_allocator, "BeatmapSetID:{}\r\n", .{self.metadata.set_id}));
 
         // Now pick up from where the section ended
         try self.file.?.seekTo(eos);
@@ -162,9 +162,9 @@ pub const OsuFile = struct {
     }
 
     // TODO: see if you can return the effect flags off the START in the return value
-    pub fn extentsOfSection(self: *OsuFile, lower: i32, upper: i32, mode: anytype) ![3]u64 {
+    pub fn extentsOfSection(self: *OsuFile, lower: i32, upper: i32, mode: anytype) ![3]usize {
         if (self.file == null) return OsuFileIOError.FileDNE;
-        var retval = [_]u64{0} ** 3;
+        var retval = [_]usize{0} ** 3;
         var m: usize = 0; // mode
         var t: u2 = 0; // where is the 'time' field located
         var bytes_read: usize = 64;
@@ -207,22 +207,22 @@ pub const OsuFile = struct {
 
                     if (lower <= found_time and found_time <= upper) {
                         if (!last_in_range) {
-                            retval[0] = try self.file.?.getPos() - 64; // f->t transition
+                            retval[0] = @intCast(try self.file.?.getPos() - 64); // f->t transition
                         }
                         last_in_range = true;
                         retval[2] += 1;
                     } else {
                         if (last_in_range) {
-                            retval[1] = try self.file.?.getPos() - 64;
+                            retval[1] = @intCast(try self.file.?.getPos() - 64);
                             break :_line;
-                        } else retval[0] = (((try self.file.?.getPos()) - bytes_read) + eol);
+                        } else retval[0] = @intCast(((try self.file.?.getPos()) - bytes_read) + eol);
                     }
                     break :_char;
                 } else f += 1;
                 last_i_b = i_b + 1;
             }
             if (eol < 2) break :_line;
-            try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - eol - 1))));
+            try self.file.?.seekBy(0 - (@as(isize, @intCast(bytes_read - eol - 1))));
         }
 
         if (retval[1] == 0) retval[1] = try self.findEndOfSectionOffset(self.section_offsets[m] + 1); // If no ending val just set the cursor to EOS
@@ -251,30 +251,30 @@ pub const OsuFile = struct {
         return retval;
     }
 
-    pub fn findSectionInitialBPM(self: *OsuFile, offset: u64) !f32 {
+    pub fn findSectionInitialBPM(self: *OsuFile, offset: usize) !f32 {
         var buffer = [_]u8{0} ** 64;
-        var bytes_read: u64 = 0;
+        var bytes_read: usize = 0;
         var fields: u3 = 0;
-        var bpmlineoffset: u64 = 0;
+        var bpmlineoffset: usize = 0;
         var bpmoffset = [_]usize{ 0, 0 };
         bpmoffset[0] = 1;
 
         try self.file.?.seekTo(self.section_offsets[5]);
 
         // FIXME: this needs offset of line AFTER start s.t. sving a section beginning on a barline at the start of a song doesnt die
-        while (try self.file.?.getPos() <= offset) {
+        while (@as(usize, @intCast(try self.file.?.getPos())) <= offset) {
             bytes_read = try self.file.?.readAll(&buffer);
             _for: for (buffer, 0..buffer.len) |c, i| {
                 switch (c) {
                     '\n' => {
-                        try self.file.?.seekBy(@as(i64, @intCast(i)) - @as(i64, @intCast(bytes_read)) + 2); // Seek back
+                        try self.file.?.seekBy(@as(isize, @intCast(i)) - @as(isize, @intCast(bytes_read)) + 2); // Seek back
                         break :_for; // Start over
                     },
                     ',' => {
                         switch (fields) {
                             6 => {
-                                if (buffer[i - 1] == '1') bpmlineoffset = try self.file.?.getPos() - 65;
-                                try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse 0) - 1)))); // Skip to the end of the line
+                                if (buffer[i - 1] == '1') bpmlineoffset = @as(usize, @intCast(try self.file.?.getPos())) - 65;
+                                try self.file.?.seekBy(0 - (@as(isize, @intCast(bytes_read - (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse 0) - 1)))); // Skip to the end of the line
                                 break :_for;
                             },
                             else => fields += 1,
@@ -312,13 +312,13 @@ pub const OsuFile = struct {
         return 60000.0 / try fmt.parseFloat(f32, buffer[bpmoffset[0]..bpmoffset[1]]);
     }
 
-    pub fn posOfPoint(self: *OsuFile, time: i32, mode: anytype) !?u64 {
+    pub fn posOfPoint(self: *OsuFile, time: i32, mode: anytype) !?usize {
         const i = self.extentsOfSection(time, time, mode) catch |e| return e; // Pass it back
         if (i[0]) |j| return j else return null;
     }
 
     // TODO: remove append and just use replace.you can do the same thing as it by doing placeSection(end_of_sec, end_of_sec, arr)
-    pub fn placeSection(self: *OsuFile, start: u64, end: u64, arr: anytype) !void {
+    pub fn placeSection(self: *OsuFile, start: usize, end: usize, arr: anytype) !void {
         if (self.file == null) return OsuFileIOError.FileDNE;
 
         // This is fucked... just let me use an if statement please
@@ -341,17 +341,17 @@ pub const OsuFile = struct {
             len -= 1;
         }
 
-        const tmp_pref: []u8 = try heap.raw_c_allocator.alloc(u8, len);
+        const tmp_pref: []u8 = try std.heap.page_allocator.alloc(u8, len);
         @memcpy(tmp_pref, self.path[0..len]);
-        const tmp_path = try std.mem.concat(heap.raw_c_allocator, u8, &[_][]u8{ tmp_pref, @constCast("tmp.txt") });
-        defer heap.raw_c_allocator.free(tmp_path);
+        const tmp_path = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ tmp_pref, @constCast("tmp.txt") });
+        defer std.heap.page_allocator.free(tmp_path);
 
         const tmpfp: fs.File = try fs.createFileAbsolute(tmp_path, .{ .read = true, .truncate = true });
 
         try self.file.?.seekTo(0);
 
         var t = [_]u8{0};
-        var l: u64 = 1;
+        var l: usize = 1;
         for (0..start) |_| {
             _ = try self.file.?.readAll(&t);
             _ = try tmpfp.writeAll(&t);
@@ -382,10 +382,10 @@ pub const OsuFile = struct {
 
     // TODO: While this looks nicer than the previous implementation...
     //       This is really unoptimized and runs in like factorial time or some shit
-    pub fn findEndOfSectionOffset(self: *OsuFile, offset: u64) !u64 {
+    pub fn findEndOfSectionOffset(self: *OsuFile, offset: usize) !usize {
         if (self.file == null) return OsuFileIOError.FileDNE;
         var buffer = [_]u8{0} ** 64;
-        var bytes_read: u64 = 64;
+        var bytes_read: usize = 64;
 
         try self.file.?.seekTo(offset + 2);
 
@@ -393,14 +393,14 @@ pub const OsuFile = struct {
             const eol = std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'});
             if (eol) |e| {
                 if (e < 2) {
-                    try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - e - 1))));
+                    try self.file.?.seekBy(0 - (@as(isize, @intCast(bytes_read - e - 1))));
                     break :_while;
                 }
-                try self.file.?.seekBy(0 - (@as(i64, @intCast(bytes_read - e - 1))));
+                try self.file.?.seekBy(0 - (@as(isize, @intCast(bytes_read - e - 1))));
             }
             bytes_read = try self.file.?.readAll(&buffer);
         }
-        return try self.file.?.getPos() - 2;
+        return @as(usize, @intCast(try self.file.?.getPos())) - 2;
     }
 
     // Get section offsets for the .osu file
@@ -411,7 +411,7 @@ pub const OsuFile = struct {
         if (self.file == null) return OsuFileIOError.FileDNE;
 
         // Warn if file is really big
-        const file_size: u64 = try self.file.?.getEndPos();
+        const file_size: usize = @intCast(try self.file.?.getEndPos());
         if ((file_size / 1024) >= 1500) { // Don't want to spend forever processing and or hog a ton or memory
             std.debug.print("\x1b[33mWARNING: What the hell man...\nWhy are you editing nanaparty with this shitty tool\n(File size exceeds 1.5Mb)\x1b[0m\n", .{});
             return OsuFileIOError.FileTooLarge; // Return an error
@@ -454,14 +454,14 @@ pub const OsuFile = struct {
     }
 
     // Strongly typed languages when `anytype`
-    pub fn loadObjArr(self: *OsuFile, offset: u64, size: usize, arr: anytype) !void {
+    pub fn loadObjArr(self: *OsuFile, offset: usize, size: usize, arr: anytype) !void {
         _ = switch (@TypeOf(arr)) {
             *[]sv.TimingPoint, *[]hitobj.HitObject => 0,
             else => unreachable,
         };
         var buffer = [_]u8{0} ** 64;
 
-        arr.* = if (size != 0) (try heap.raw_c_allocator.alloc(@TypeOf(arr.*[0]), size)) else (try heap.raw_c_allocator.alloc(@TypeOf(arr.*[0]), BLOCK_SZ)); // Allocate `size` elements if specified. else realloc as much as necessary
+        arr.* = if (size != 0) (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), size)) else (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), BLOCK_SZ)); // Allocate `size` elements if specified. else realloc as much as necessary
 
         try self.file.?.seekTo(offset);
 
@@ -478,13 +478,13 @@ pub const OsuFile = struct {
             try arr.*[i].fromStr(buffer[0 .. eol + 2]);
             @memset(&buffer, 0);
 
-            try self.file.?.seekBy(0 - @as(i64, @intCast(bytes_read - eol - 2)));
+            try self.file.?.seekBy(0 - @as(isize, @intCast(bytes_read - eol - 2)));
         }
         //return self.file.?.getPos();
         // Set the proper current offset based off the type of array given
         switch (@TypeOf(arr)) {
-            *[]sv.TimingPoint => self.curr_offsets[5] = try self.file.?.getPos(),
-            *[]hitobj.HitObject => self.curr_offsets[6] = try self.file.?.getPos(),
+            *[]sv.TimingPoint => self.curr_offsets[5] = @intCast(try self.file.?.getPos()),
+            *[]hitobj.HitObject => self.curr_offsets[6] = @intCast(try self.file.?.getPos()),
             else => unreachable,
         }
     }
@@ -499,8 +499,8 @@ pub fn load() type {
         var str_buff = [_]u8{0} ** 64;
         var i_strbuf: u8 = 0;
 
-        pub fn hitObjArray(file: fs.File, offset: u64, size: usize, hitobj_array: *[]hitobj.HitObject) !u64 {
-            hitobj_array.* = if (size != 0) (try heap.raw_c_allocator.alloc(hitobj.HitObject, size)) else (try heap.raw_c_allocator.alloc(hitobj.HitObject, BLOCK_SZ)); // Allocate `size` elements if specified. else realloc as much as necessary
+        pub fn hitObjArray(file: fs.File, offset: usize, size: usize, hitobj_array: *[]hitobj.HitObject) !usize {
+            hitobj_array.* = if (size != 0) (try std.heap.page_allocator.alloc(hitobj.HitObject, size)) else (try std.heap.page_allocator.alloc(hitobj.HitObject, BLOCK_SZ)); // Allocate `size` elements if specified. else realloc as much as necessary
 
             try file.seekTo(offset + 1); // Go to the offset
 
@@ -514,7 +514,7 @@ pub fn load() type {
                     if (c <= '\r') {
                         //hitobj_array.*[curr_point] = try StrToHitObject(); // Convert the string and load it into the array
                         try hitobj_array.*[curr_point].fromStr(&buffer);
-                        try file.seekBy(@as(i64, @intCast(i)) - @as(i64, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data.
+                        try file.seekBy(@as(isize, @intCast(i)) - @as(isize, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data.
                         i_strbuf = 0; // Set this iterator to 0
                         @memset(&str_buff, 0); // Clear out the string buffer
                         break;
@@ -526,11 +526,11 @@ pub fn load() type {
                 @memset(&buffer, 0); // Clear the buffer
             }
 
-            return try file.getPos() - 1; // Return the last position
+            return @intCast(try file.getPos() - 1); // Return the last position
         }
 
-        pub fn timingPointArray(file: fs.File, offset: u64, size: usize, sv_array: *[]sv.TimingPoint) !u64 {
-            sv_array.* = if (size != 0) (try heap.raw_c_allocator.alloc(sv.TimingPoint, size)) else (try heap.raw_c_allocator.alloc(sv.TimingPoint, BLOCK_SZ)); // Allocate `size` elements if specified. else realloc as much as necessary
+        pub fn timingPointArray(file: fs.File, offset: usize, size: usize, sv_array: *[]sv.TimingPoint) !usize {
+            sv_array.* = if (size != 0) (try std.heap.page_allocator.alloc(sv.TimingPoint, size)) else (try std.heap.page_allocator.alloc(sv.TimingPoint, BLOCK_SZ)); // Allocate `size` elements if specified. else realloc as much as necessary
 
             try file.seekTo(offset + 1); // Go to the offset
 
@@ -544,7 +544,7 @@ pub fn load() type {
                     if (c <= '\r') {
                         //sv_array.*[curr_point] = try StrToTimingPoint(); // Convert the string and load it into the array
                         try sv_array.*[curr_point].fromStr(&buffer);
-                        try file.seekBy(@as(i64, @intCast(i)) - @as(i64, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data.
+                        try file.seekBy(@as(isize, @intCast(i)) - @as(isize, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data.
                         i_strbuf = 0; // Set this iterator to 0
                         @memset(&str_buff, 0); // Clear out the string buffer
                         break;
@@ -555,7 +555,7 @@ pub fn load() type {
                 }
                 @memset(&buffer, 0); // Clear the buffer
             }
-            return try file.getPos() - 1; // Return the last position
+            return @intCast(try file.getPos() - 1); // Return the last position
         }
     };
 }
