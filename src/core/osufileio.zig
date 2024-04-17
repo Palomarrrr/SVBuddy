@@ -14,6 +14,7 @@ const stdout = bw.writer();
 
 pub const OsuFileIOError = error{
     FileDNE,
+    NoPathGiven,
     FileTooLarge, // If the file is too big to work on
     IncompleteFile, // If the file either ends in an unexpected place or does not have some vital data (ex. missing metadata fields)
     InvalidType,
@@ -47,7 +48,9 @@ pub const OsuFile = struct {
         self.path = try std.heap.page_allocator.alloc(u8, path.len);
         @memcpy(self.path, path);
 
-        self.file = try fs.openFileAbsolute(self.path, .{ .mode = .read_write });
+        self.file = fs.openFileAbsolute(self.path, .{ .mode = .read_write }) catch {
+            return OsuFileIOError.NoPathGiven;
+        };
 
         try self.findSectionOffsets();
         for (self.section_offsets, 0..self.section_offsets.len) |s, i| self.curr_offsets[i] = s;
@@ -190,6 +193,7 @@ pub const OsuFile = struct {
         try self.file.?.seekTo(self.section_offsets[m] + 1);
 
         // This feels cursed
+        // TODO: this is fucked up redo it
         _line: while (bytes_read >= 64) {
             var buffer = [_]u8{0} ** 64;
             var i_b: usize = 0;
@@ -204,54 +208,61 @@ pub const OsuFile = struct {
                 if (i_b >= eol) break :_char;
                 if (f == t) {
                     const found_time = try std.fmt.parseInt(i32, buffer[last_i_b..i_b], 10);
+                    std.debug.print("{}?<={}?<={} | {}:{}\n", .{ lower, found_time, upper, lower <= found_time, upper <= found_time });
 
                     if (lower <= found_time and found_time <= upper) {
                         if (!last_in_range) {
                             retval[0] = @intCast(try self.file.?.getPos() - 64); // f->t transition
+                            std.debug.print("val0|{}\n", .{found_time});
                         }
                         last_in_range = true;
                         retval[2] += 1;
                     } else {
-                        if (last_in_range) {
+                        if (last_in_range or found_time > upper) {
                             retval[1] = @intCast(try self.file.?.getPos() - 64);
-                            break :_line;
-                        } else retval[0] = @intCast(((try self.file.?.getPos()) - bytes_read) + eol);
+                            std.debug.print("val1|{}\n", .{found_time});
+                            //break :_line;
+                        } else {
+                            retval[0] = @intCast(((try self.file.?.getPos()) - bytes_read) + eol);
+                            std.debug.print("val0|{}\n", .{found_time});
+                        }
                     }
                     break :_char;
                 } else f += 1;
                 last_i_b = i_b + 1;
             }
-            if (eol < 2) break :_line;
+            if (eol < 2 or retval[1] != 0) break :_line;
             try self.file.?.seekBy(0 - (@as(isize, @intCast(bytes_read - eol - 1))));
         }
 
         if (retval[1] == 0) retval[1] = try self.findEndOfSectionOffset(self.section_offsets[m] + 1); // If no ending val just set the cursor to EOS
+        if (retval[0] == 0) retval[0] = try self.findEndOfSectionOffset(self.section_offsets[m] + 1); // Same w/ start
 
         // DEBUG
-        //try self.file.?.seekTo(retval[0] - 10);
-        //std.debug.print("START: ", .{});
-        //for (0..20) |_| {
-        //    var b = [_]u8{0};
-        //    _ = try self.file.?.read(&b);
-        //    std.debug.print("{},", .{b[0]});
-        //}
-        //std.debug.print("\n", .{});
+        try self.file.?.seekTo(retval[0] - 10);
+        std.debug.print("START:{}:", .{retval[0]});
+        for (0..20) |_| {
+            var b = [_]u8{0};
+            _ = try self.file.?.read(&b);
+            std.debug.print("`{}`,", .{b[0]});
+        }
+        std.debug.print("\n", .{});
 
-        //try self.file.?.seekTo(retval[1] - 10);
-        //std.debug.print("END: ", .{});
-        //for (0..20) |_| {
-        //    var b = [_]u8{0};
-        //    _ = try self.file.?.read(&b);
-        //    std.debug.print("{},", .{b[0]});
-        //}
-        //std.debug.print("\n", .{});
+        try self.file.?.seekTo(retval[1] - 10);
+        std.debug.print("END:{}:", .{retval[1]});
+        for (0..20) |_| {
+            var b = [_]u8{0};
+            _ = try self.file.?.read(&b);
+            std.debug.print("`{}`,", .{b[0]});
+        }
+        std.debug.print("\n", .{});
         // DEBUG
 
         try self.file.?.seekTo(self.curr_offsets[m]); // Move the cursor back to where it was last
         return retval;
     }
 
-    pub fn findSectionInitialBPM(self: *OsuFile, offset: usize) !f32 {
+    pub fn findSectionInitialBPM(self: *OsuFile, offset: usize) ![2]f32 {
         var buffer = [_]u8{0} ** 64;
         var bytes_read: usize = 0;
         var fields: u3 = 0;
@@ -309,7 +320,7 @@ pub const OsuFile = struct {
             }
             fields += 1;
         }
-        return 60000.0 / try fmt.parseFloat(f32, buffer[bpmoffset[0]..bpmoffset[1]]);
+        return [2]f32{ 60000.0 / try fmt.parseFloat(f32, buffer[bpmoffset[0]..bpmoffset[1]]), try fmt.parseFloat(f32, buffer[0 .. bpmoffset[0] - 1]) };
     }
 
     pub fn posOfPoint(self: *OsuFile, time: i32, mode: anytype) !?usize {
@@ -317,7 +328,6 @@ pub const OsuFile = struct {
         if (i[0]) |j| return j else return null;
     }
 
-    // TODO: remove append and just use replace.you can do the same thing as it by doing placeSection(end_of_sec, end_of_sec, arr)
     pub fn placeSection(self: *OsuFile, start: usize, end: usize, arr: anytype) !void {
         if (self.file == null) return OsuFileIOError.FileDNE;
 
@@ -470,10 +480,14 @@ pub const OsuFile = struct {
         _for: for (0..arr.*.len) |i| {
             bytes_read = try self.file.?.readAll(&buffer);
             if (bytes_read <= 0) break :_for;
+            std.debug.print("``{s}``\n", .{buffer});
 
             const eol = if (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{ '\r', '\n' })) |e| e else buffer.len - 2; // -2 to compensate to the + 2 later on
 
-            if (eol < 2) return OsuFileIOError.IncompleteFile;
+            if (eol < 2) {
+                if (bytes_read >= 64) return OsuFileIOError.IncompleteFile;
+                continue;
+            }
 
             try arr.*[i].fromStr(buffer[0 .. eol + 2]);
             @memset(&buffer, 0);

@@ -146,6 +146,7 @@ pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, 
     }
 }
 
+// TODO: Harden against obj_arr.len == 0 but still prune any stacked sv
 pub fn pruneUnusedSv(sv_arr: *[]TimingPoint, obj_arr: []hitobj.HitObject) !void { // Im just gonna assume user gave a place that has actual notes
     var new_sv_arr: []TimingPoint = try std.heap.page_allocator.alloc(TimingPoint, obj_arr.len + (sv_arr.*.len - getNumInherited(sv_arr.*)));
     var i: usize = 0;
@@ -156,12 +157,25 @@ pub fn pruneUnusedSv(sv_arr: *[]TimingPoint, obj_arr: []hitobj.HitObject) !void 
             new_sv_arr[k] = sv_arr.*[j];
             k += 1;
             j += 1;
+        } else if (j > 0 and sv_arr.*[j - 1].time == sv_arr.*[j].time and sv_arr.*[j - 1].is_inh == 0) { // If we have a stacked timing point | this will just keep the first point
+            j += 1;
         } else if (sv_arr.*[j].time < obj_arr[i].time + 10 and sv_arr.*[j].time > obj_arr[i].time - 10) { // Within +-10ms of the note
             new_sv_arr[k] = sv_arr.*[j];
             k += 1;
             j += 1;
             i += 1;
         } else {
+            // If we have a timing point and a sv point stacked on-top of eachother
+            //      If this really becomes an issue you could make this also check the point 2 lines before/after
+            //      j for a timing point that has time != j.time
+            //      just for the rare case of having (s t s) all on the same time (s = sv point, t = timing)
+            if (j > 0 and sv_arr.*[j - 1].is_inh == 1 and sv_arr.*[j - 1].time == sv_arr.*[j].time) {
+                new_sv_arr[k] = sv_arr.*[j];
+                k += 1;
+            } else if (j < sv_arr.*.len - 1 and sv_arr.*[j + 1].is_inh == 1 and sv_arr.*[j + 1].time == sv_arr.*[j].time) {
+                new_sv_arr[k] = sv_arr.*[j];
+                k += 1;
+            }
             j += 1;
         }
     }
@@ -317,30 +331,20 @@ pub fn scaleSection(sv_arr: []TimingPoint, l_bound: f32, u_bound: f32, initial_b
     for (0..sv_arr.len) |i| {
         if (sv_arr[i].is_inh == 0) {
             sv_arr[i].value = -100.0 / svBpmAdjust(sv_arr[i].value, initial_bpm, next_bpm); // Convert back to normal numbers
-            if (sv_arr[i].value > old_sv_up) {
-                old_sv_up = sv_arr[i].value;
-            }
-            if (sv_arr[i].value < old_sv_low) {
-                old_sv_low = sv_arr[i].value;
-            }
+            if (sv_arr[i].value > old_sv_up) old_sv_up = sv_arr[i].value;
+            if (sv_arr[i].value < old_sv_low) old_sv_low = sv_arr[i].value;
         } else {
-            if (initial_bpm > 0) {
-                next_bpm = 60000 / sv_arr[i].value;
-            }
+            if (initial_bpm > 0) next_bpm = 60000 / sv_arr[i].value;
         }
     }
 
     old_sv_dist = old_sv_up - old_sv_low; // Calculate the difference
 
     // Deflate value between 0 - 1
-    for (0..sv_arr.len) |i| {
-        sv_arr[i].value = (sv_arr[i].value - old_sv_low) / old_sv_dist; // Subtract the old lower bound and divide by the old distance
-    }
+    for (0..sv_arr.len) |i| sv_arr[i].value = (sv_arr[i].value - old_sv_low) / old_sv_dist; // Subtract the old lower bound and divide by the old distance
 
     // Inflate value between new bounds
-    for (0..sv_arr.len) |i| {
-        sv_arr[i].value = -100.0 / ((sv_arr[i].value * new_sv_dist) + l_bound); // Multiply by the new distance and then add the new lower bound
-    }
+    for (0..sv_arr.len) |i| sv_arr[i].value = -100.0 / ((sv_arr[i].value * new_sv_dist) + l_bound); // Multiply by the new distance and then add the new lower bound
 }
 
 // TODO - Implement BPM scaling

@@ -8,6 +8,7 @@ const rand = std.rand.Random;
 const RAND_GEN = std.rand.DefaultPrng;
 
 const sv = @import("./libsv.zig");
+const com = @import("../util/common.zig");
 
 // Just some shorthand shit to make things easier on me
 const stdout_file = std.io.getStdOut().writer();
@@ -72,22 +73,73 @@ pub const HitObject = struct {
             }
             last = ind + 1;
         }
-        std.debug.print("`{s}`\n", .{str[last..eol]});
+        // THIS ISNT IMPLEMENTED YET SO WHY HAVE IT EXIST
+        //std.debug.print("`{s}`\n", .{str[last..eol]});
         //self.objectParams = try std.heap.page_allocator.alloc(u8, (eol - last));
-        @memcpy(self.objectParams, str[last..eol]);
+        //@memcpy(self.objectParams, str[last..eol]);
         std.debug.print("MADE:{s}\n", .{try self.toStr()});
     }
 
     pub fn deinit(self: *HitObject) void {
         std.heap.page_allocator.free(self.objectParams);
     }
+
+    // Given a NUMERIC(not a string) list of snappings and a bpm, snap to the snapping w/ the smallest difference
+    pub fn snapTo(self: *HitObject, list_of_snappings: []u8, bpm: f32, bpm_offset: i32) !void {
+        var diffs: []i32 = try std.heap.page_allocator.alloc(i32, list_of_snappings.len);
+        var d: i32 = 9999999; // just a large number
+        var d_i: usize = 0;
+        const time_per_measure: f32 = 60000.0 / bpm;
+
+        std.debug.print("finding diffs\n", .{});
+        for (list_of_snappings, 0..list_of_snappings.len) |s, i| {
+            std.debug.print("i={}\n", .{i});
+            const time_per_snap: f32 = time_per_measure / @as(f32, @floatFromInt(s));
+            const muliplier: i32 = @intFromFloat(@round(@as(f32, @floatFromInt(self.time)) / time_per_snap));
+            diffs[i] = self.time - @as(i32, @intFromFloat(@round(@as(f32, @floatFromInt(muliplier)) * time_per_snap)));
+        }
+
+        for (0..diffs.len) |i| {
+            const diff: i32 = @intFromFloat(@as(f32, @sqrt(std.math.pow(f32, @as(f32, @floatFromInt(diffs[i])), 2)))); // abs(diffs[i])
+            if (diff < d) {
+                d = diff; // find the smallest
+                d_i = i;
+                std.debug.print("new smallest {}:{}\n", .{ d, list_of_snappings[i] });
+            }
+        }
+
+        std.debug.print("NEW OFFSET: {} - {} = {}\n", .{ self.time, diffs[d_i], self.time - diffs[d_i] });
+        self.time = (self.time - diffs[d_i]) + @rem(bpm_offset, @as(i32, @intFromFloat(@round(time_per_measure)))); // snap the note
+    }
 };
+
+//**********************************************************
+//                      UTILITIES
+//**********************************************************
+
+pub fn snapNotesTo(hitobj_array: []HitObject, snappings_str: []u8, sv_arr: []sv.TimingPoint, initial_bpm: f32, bpm_offset: i32) !void {
+    const bpm: f32 = initial_bpm; // TBI
+
+    const snappings: []u8 = try com.splitByDelim(snappings_str, ','); // Split the string
+    defer std.heap.page_allocator.free(snappings);
+
+    //const bpm_switch_time
+    const n_uninherited: usize = if (sv_arr.len != 0) sv_arr.len - sv.getNumInherited(sv_arr) else 0;
+
+    if (n_uninherited != 0) {
+        std.debug.print("ERROR: Not implemented yet...\n", .{});
+    } else for (0..hitobj_array.len) |i| try hitobj_array[i].snapTo(snappings, bpm, bpm_offset); // snap all notes
+}
 
 //**********************************************************
 //                        EFFECTS
 //**********************************************************
 
 // TODO - Create more and implement
+
+pub fn toUnhittableNote(hitobj_array: *[]HitObject) !void {
+    _ = hitobj_array;
+}
 
 // Need this to return a slice instead of an array. either that or i need to find a good way to turn the result into a slice
 pub fn toBarline(hitobj_array: []HitObject) ![]sv.TimingPoint {

@@ -1,6 +1,10 @@
 const std = @import("std");
 const capy = @import("capy");
 
+// Note to self
+// | to build for x86 windows
+// | `zig build --host-target x86_64-windows`
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -31,20 +35,6 @@ pub fn build(b: *std.Build) !void {
     const serve = try capy.install(wasm, .{});
     const serve_step = b.step("serve", "Start a local web server to run this application");
     serve_step.dependOn(serve);
-
-    // Just to make things easier for me
-    //const windows = b.addExecutable(.{
-    //    .name = "svbuddy",
-    //    .root_source_file = .{ .path = "src/main.zig" },
-    //    .target = b.resolveTargetQuery(
-    //        //comptime std.Target.Query.parse(.{ .arch_os_abi = "x86_64-windows-musl" }) catch unreachable,
-    //        comptime std.Target.Query.parse(.{ .arch_os_abi = "x86_64-windows" }) catch unreachable,
-    //    ),
-    //    .optimize = optimize,
-    //});
-    //const win64 = try capy.install(windows, .{});
-    //const win64_step = b.step("windows", "Install for windows");
-    //win64_step.dependOn(win64);
 
     const exe_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
