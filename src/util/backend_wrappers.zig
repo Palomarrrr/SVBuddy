@@ -102,37 +102,26 @@ pub fn applyHObjFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         const val4: f32 = std.fmt.parseFloat(f32, params[6]) catch 0;
         _ = val4;
 
-        std.debug.print("1|{}=>{}\n", .{ start, end });
-
         const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
         const ext_hobj = try target.*.extentsOfSection(start, end, hobj.HitObject);
-
-        std.debug.print("{any}\n", .{ext_tp});
 
         var tps = try com.create(sv.TimingPoint);
         var hobjs = try com.create(hobj.HitObject);
         defer std.heap.page_allocator.free(tps);
         defer std.heap.page_allocator.free(hobjs);
 
-        if (ext_tp[2] != 0) {
-            _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tps);
-        }
-
+        if (ext_tp[2] != 0) _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tps);
         _ = try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs);
 
-        std.debug.print("2\n", .{});
-
         const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
-        std.debug.print("bpm={d:.2}\n", .{bpm});
-
-        std.debug.print("3\n", .{});
 
         switch (params[0][1] - '0') {
             0 => try hobj.snapNotesTo(hobjs, params[3], tps, bpm[0], @as(i32, @intFromFloat(bpm[1]))),
+            //1 => ,
+            //2 => ,
             else => unreachable,
         }
         try target.*.placeSection(ext_hobj[0], ext_hobj[1], hobjs); // Place
-        std.debug.print("4\n", .{});
     } else return osufile.OsuFileIOError.FileDNE;
 }
 

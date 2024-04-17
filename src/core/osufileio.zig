@@ -173,12 +173,6 @@ pub const OsuFile = struct {
         var bytes_read: usize = 64;
         var last_in_range = false;
 
-        // _____--------____
-        //      ^      ^
-        //      1      2
-        // 1 = f->t transition | start of section
-        // 2 = t->f transition | end of section
-
         switch (mode) {
             sv.TimingPoint => {
                 m = 5;
@@ -193,7 +187,7 @@ pub const OsuFile = struct {
         try self.file.?.seekTo(self.section_offsets[m] + 1);
 
         // This feels cursed
-        // TODO: this is fucked up redo it
+        // TODO: this is fucked up redo it | little bit better but still fucked
         _line: while (bytes_read >= 64) {
             var buffer = [_]u8{0} ** 64;
             var i_b: usize = 0;
@@ -205,25 +199,24 @@ pub const OsuFile = struct {
 
             _char: while (eol != 0) {
                 i_b = std.ascii.indexOfIgnoreCasePos(&buffer, i_b + 1, &[_]u8{','}) orelse break :_char; // Next instance of ,
-                if (i_b >= eol) break :_char;
-                if (f == t) {
+                if (i_b >= eol) break :_char; // We shouldnt be reading past the end
+                if (f == t) { // if the current field == the target
                     const found_time = try std.fmt.parseInt(i32, buffer[last_i_b..i_b], 10);
                     std.debug.print("{}?<={}?<={} | {}:{}\n", .{ lower, found_time, upper, lower <= found_time, upper <= found_time });
-
                     if (lower <= found_time and found_time <= upper) {
                         if (!last_in_range) {
-                            retval[0] = @intCast(try self.file.?.getPos() - 64); // f->t transition
+                            retval[0] = @intCast(try self.file.?.getPos() - bytes_read); // f->t transition
                             std.debug.print("val0|{}\n", .{found_time});
                         }
                         last_in_range = true;
                         retval[2] += 1;
                     } else {
-                        if (last_in_range or found_time > upper) {
-                            retval[1] = @intCast(try self.file.?.getPos() - 64);
+                        //if (last_in_range or found_time > upper) {
+                        if (found_time > upper) { // This should be saying the same thing
+                            retval[1] = @intCast(try self.file.?.getPos() - bytes_read); // Set the cursor at the start of the line
                             std.debug.print("val1|{}\n", .{found_time});
-                            //break :_line;
                         } else {
-                            retval[0] = @intCast(((try self.file.?.getPos()) - bytes_read) + eol);
+                            retval[0] = @intCast(((try self.file.?.getPos()) - bytes_read) + eol); // Set the cursor at the end of the current line
                             std.debug.print("val0|{}\n", .{found_time});
                         }
                     }
@@ -231,7 +224,7 @@ pub const OsuFile = struct {
                 } else f += 1;
                 last_i_b = i_b + 1;
             }
-            if (eol < 2 or retval[1] != 0) break :_line;
+            if (eol < 15 or retval[1] != 0) break :_line;
             try self.file.?.seekBy(0 - (@as(isize, @intCast(bytes_read - eol - 1))));
         }
 
@@ -484,8 +477,8 @@ pub const OsuFile = struct {
 
             const eol = if (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{ '\r', '\n' })) |e| e else buffer.len - 2; // -2 to compensate to the + 2 later on
 
-            if (eol < 2) {
-                if (bytes_read >= 64) return OsuFileIOError.IncompleteFile;
+            if (eol < 15) { // the shortest possible line you could create is 15 chars long
+                if (bytes_read >= 64) return OsuFileIOError.IncompleteFile; // this is only true if we are at the end of a section
                 continue;
             }
 
@@ -494,7 +487,7 @@ pub const OsuFile = struct {
 
             try self.file.?.seekBy(0 - @as(isize, @intCast(bytes_read - eol - 2)));
         }
-        //return self.file.?.getPos();
+
         // Set the proper current offset based off the type of array given
         switch (@TypeOf(arr)) {
             *[]sv.TimingPoint => self.curr_offsets[5] = @intCast(try self.file.?.getPos()),

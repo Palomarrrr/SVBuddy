@@ -15,6 +15,8 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    //exe.linkSystemLibrary("/bedrock/strata/arch/usr/lib/libgtk-4.so");
+    exe.linkSystemLibrary("../../../../../bedrock/strata/arch/usr/lib/libgtk-4.so");
     b.installArtifact(exe);
 
     const run_cmd = try capy.install(exe, .{ .args = b.args });
