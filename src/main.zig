@@ -108,7 +108,6 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
 
     params[0] = try std.heap.page_allocator.alloc(u8, parent_name.len);
     @memcpy(params[0], parent_name);
-    std.debug.print("A:{s}:{s}\n", .{ parent_name, params[0] });
 
     params[9][0] = OPTION_FLAG; // This should always be the last param
 
@@ -119,7 +118,6 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         @memcpy(params[p], text_out);
         p += 1;
     }
-    std.debug.print("B\n", .{});
 
     switch (parent_name[0] - '0') {
         0 => {

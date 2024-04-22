@@ -24,24 +24,31 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 
         const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
         const ext_hobj = try target.*.extentsOfSection(start, end, hobj.HitObject);
+        std.debug.print("Found section extents\n", .{});
 
         const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
+        std.debug.print("Found section bpm\n", .{});
         //std.debug.print("bpm={d:.2}\n", .{bpm});
         var tp = try com.create(sv.TimingPoint);
         var hobjs = try com.create(hobj.HitObject);
         defer std.heap.page_allocator.free(hobjs);
-        defer std.heap.page_allocator.free(tp); // TESTTHIS
+        //defer std.heap.page_allocator.free(tp); // TESTTHIS
 
+        std.debug.print("Creating objarrs\n", .{});
         if (ext_hobj[2] == 0 or (params[9][0] & 0x1) == 0) { // If no hit objs
+            std.debug.print("Making new tpobjarr1\n", .{});
+            std.debug.print("bpmext:{any}\n", .{ext_hobj});
             try sv.createNewSVSection(&tp, null, start, end, 12, bpm[0]); // TODO: ADD SNAPPING
         } else {
             try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs);
+            std.debug.print("made tpobjarr1\n", .{});
             try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm[0]);
         }
 
         if (ext_tp[2] != 0 and (params[9][0] & 0x4) == 0) { // If points existed previously | this is only important if we have uninherited timing points
             var tp2 = try com.create(sv.TimingPoint);
             _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tp2);
+            std.debug.print("made tpobjarr2\n", .{});
             defer std.heap.page_allocator.free(tp2);
 
             const n_uinh = tp2.len - sv.getNumInherited(tp2);
@@ -89,7 +96,6 @@ pub fn applyHObjFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
     if (opt_targ) |target| {
         // Refresh the file incase any changes were made
         try target.*.refresh();
-        std.debug.print("enter\n", .{});
 
         const start: i32 = try timing.timeStrToTick(params[1]);
         const end: i32 = try timing.timeStrToTick(params[2]);

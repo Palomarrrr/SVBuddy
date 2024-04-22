@@ -120,7 +120,7 @@ pub const HitObject = struct {
 pub fn snapNotesTo(hitobj_array: []HitObject, snappings_str: []u8, sv_arr: []sv.TimingPoint, initial_bpm: f32, bpm_offset: i32) !void {
     const bpm: f32 = initial_bpm; // TBI
 
-    const snappings: []u8 = try com.splitByDelim(snappings_str, ','); // Split the string
+    const snappings: []u8 = try com.splitByComma(snappings_str); // Split the string
     defer std.heap.page_allocator.free(snappings);
 
     //const bpm_switch_time

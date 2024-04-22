@@ -238,7 +238,7 @@ pub fn linear(sv_arr: []TimingPoint, sv_start: f32, sv_end: f32, initial_bpm: f3
 }
 
 // exponential increases/decreases
-pub fn exponential(sv_arr: []TimingPoint, sv_start: f32, sv_end: f32, initial_bpm: f32) !void {
+pub fn exponential(sv_arr: []TimingPoint, sv_start: f32, sv_end: f32, initial_bpm: f32) !void { // Thanks morth1 :3
     var next_bpm: f32 = initial_bpm;
     for (0..sv_arr.len) |i| {
         if (sv_arr[i].is_inh == 0) {

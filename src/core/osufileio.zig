@@ -202,11 +202,9 @@ pub const OsuFile = struct {
                 if (i_b >= eol) break :_char; // We shouldnt be reading past the end
                 if (f == t) { // if the current field == the target
                     const found_time = try std.fmt.parseInt(i32, buffer[last_i_b..i_b], 10);
-                    std.debug.print("{}?<={}?<={} | {}:{}\n", .{ lower, found_time, upper, lower <= found_time, upper <= found_time });
                     if (lower <= found_time and found_time <= upper) {
                         if (!last_in_range) {
                             retval[0] = @intCast(try self.file.?.getPos() - bytes_read); // f->t transition
-                            std.debug.print("val0|{}\n", .{found_time});
                         }
                         last_in_range = true;
                         retval[2] += 1;
@@ -214,10 +212,8 @@ pub const OsuFile = struct {
                         //if (last_in_range or found_time > upper) {
                         if (found_time > upper) { // This should be saying the same thing
                             retval[1] = @intCast(try self.file.?.getPos() - bytes_read); // Set the cursor at the start of the line
-                            std.debug.print("val1|{}\n", .{found_time});
                         } else {
                             retval[0] = @intCast(((try self.file.?.getPos()) - bytes_read) + eol); // Set the cursor at the end of the current line
-                            std.debug.print("val0|{}\n", .{found_time});
                         }
                     }
                     break :_char;
@@ -232,23 +228,23 @@ pub const OsuFile = struct {
         if (retval[0] == 0) retval[0] = try self.findEndOfSectionOffset(self.section_offsets[m] + 1); // Same w/ start
 
         // DEBUG
-        try self.file.?.seekTo(retval[0] - 10);
-        std.debug.print("START:{}:", .{retval[0]});
-        for (0..20) |_| {
-            var b = [_]u8{0};
-            _ = try self.file.?.read(&b);
-            std.debug.print("`{}`,", .{b[0]});
-        }
-        std.debug.print("\n", .{});
+        //try self.file.?.seekTo(retval[0] - 10);
+        //std.debug.print("START:{}:", .{retval[0]});
+        //for (0..20) |_| {
+        //    var b = [_]u8{0};
+        //    _ = try self.file.?.read(&b);
+        //    std.debug.print("`{}`,", .{b[0]});
+        //}
+        //std.debug.print("\n", .{});
 
-        try self.file.?.seekTo(retval[1] - 10);
-        std.debug.print("END:{}:", .{retval[1]});
-        for (0..20) |_| {
-            var b = [_]u8{0};
-            _ = try self.file.?.read(&b);
-            std.debug.print("`{}`,", .{b[0]});
-        }
-        std.debug.print("\n", .{});
+        //try self.file.?.seekTo(retval[1] - 10);
+        //std.debug.print("END:{}:", .{retval[1]});
+        //for (0..20) |_| {
+        //    var b = [_]u8{0};
+        //    _ = try self.file.?.read(&b);
+        //    std.debug.print("`{}`,", .{b[0]});
+        //}
+        //std.debug.print("\n", .{});
         // DEBUG
 
         try self.file.?.seekTo(self.curr_offsets[m]); // Move the cursor back to where it was last
@@ -277,7 +273,7 @@ pub const OsuFile = struct {
                     ',' => {
                         switch (fields) {
                             6 => {
-                                if (buffer[i - 1] == '1') bpmlineoffset = @as(usize, @intCast(try self.file.?.getPos())) - 65;
+                                if (buffer[i - 1] == '1') bpmlineoffset = @as(usize, @intCast(try self.file.?.getPos())) - bytes_read;
                                 try self.file.?.seekBy(0 - (@as(isize, @intCast(bytes_read - (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse 0) - 1)))); // Skip to the end of the line
                                 break :_for;
                             },
@@ -313,6 +309,7 @@ pub const OsuFile = struct {
             }
             fields += 1;
         }
+        std.debug.print("BPMRET: {s}, {s}\n", .{ buffer[bpmoffset[0]..bpmoffset[1]], buffer[0 .. bpmoffset[0] - 1] });
         return [2]f32{ 60000.0 / try fmt.parseFloat(f32, buffer[bpmoffset[0]..bpmoffset[1]]), try fmt.parseFloat(f32, buffer[0 .. bpmoffset[0] - 1]) };
     }
 
