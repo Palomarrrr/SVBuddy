@@ -1,5 +1,5 @@
 const std = @import("std");
-const sv = @import("libsv.zig");
+const sv = @import("sv.zig");
 
 const TimingErr = error{
     InvalidChar,

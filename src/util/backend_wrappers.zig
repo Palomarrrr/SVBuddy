@@ -1,10 +1,15 @@
 const std = @import("std");
 
 const com = @import("./common.zig");
-const sv = @import("../core/libsv.zig");
+const sv = @import("../core/sv.zig");
+const bl = @import("../core/barline.zig");
 const hobj = @import("../core/hitobj.zig");
 const osufile = @import("../core/osufileio.zig");
-const timing = @import("../core/libtiming.zig");
+const timing = @import("../core/timing.zig");
+
+pub const BackendError = error{
+    SectionConflict,
+};
 
 pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
     if (opt_targ) |target| {
@@ -67,7 +72,7 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
                                 .meter = p.meter,
                                 .volume = p.volume,
                                 .effects = p.effects,
-                                .sampleSet = p.sampleSet,
+                                .sample_set = p.sample_set,
                             };
                         }
                         i += 2;
@@ -128,6 +133,50 @@ pub fn applyHObjFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             else => unreachable,
         }
         try target.*.placeSection(ext_hobj[0], ext_hobj[1], hobjs); // Place
+    } else return osufile.OsuFileIOError.FileDNE;
+}
+
+pub fn applyBarlineFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
+    if (opt_targ) |target| {
+        // Refresh the file incase any changes were made
+        try target.*.refresh();
+
+        const start: i32 = try timing.timeStrToTick(params[1]);
+        const end: i32 = try timing.timeStrToTick(params[2]);
+        const val1: f32 = std.fmt.parseFloat(f32, params[3]) catch 0;
+        const val2: f32 = std.fmt.parseFloat(f32, params[4]) catch 0;
+        const val3: f32 = std.fmt.parseFloat(f32, params[5]) catch 0;
+        const val4: f32 = std.fmt.parseFloat(f32, params[6]) catch 0;
+        _ = val4;
+
+        const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
+
+        const tps = try com.create(sv.TimingPoint);
+        defer std.heap.page_allocator.free(tps);
+
+        if (ext_tp[2] != 0) return BackendError.SectionConflict;
+
+        std.debug.print("exts: {}=>{}\n", .{ ext_tp[0], ext_tp[1] });
+        const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
+        std.debug.print("bpm: {d:.2}\n", .{bpm[0]});
+        var tp_out: ?[]sv.TimingPoint = null; // Prolly doesnt need to be opt
+
+        switch (params[0][1] - '0') {
+            0 => {
+                const chance: u8 = @as(u8, @intFromFloat(val3));
+                std.debug.print("chance: {}\n", .{chance});
+                tp_out = try bl.staticRandomBarlines(bpm[0], start, end, chance, val1, val2);
+                for (tp_out.?) |t| {
+                    std.debug.print("{s}\n", .{try t.toStr()});
+                }
+            },
+            //1 => ,
+            //2 => ,
+            else => unreachable,
+        }
+        if (tp_out) |tp| {
+            try target.*.placeSection(ext_tp[0], ext_tp[1], tp); // Place
+        } else unreachable;
     } else return osufile.OsuFileIOError.FileDNE;
 }
 

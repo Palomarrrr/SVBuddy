@@ -4,7 +4,7 @@ const fs = std.fs;
 const mem = std.mem;
 const fmt = std.fmt;
 
-const sv = @import("../core/libsv.zig");
+const sv = @import("../core/sv.zig");
 const hitobj = @import("../core/hitobj.zig");
 const meta = @import("./metadata.zig");
 

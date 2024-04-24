@@ -7,7 +7,7 @@ const ascii = std.ascii;
 const rand = std.rand.Random;
 const RAND_GEN = std.rand.DefaultPrng;
 
-const sv = @import("./libsv.zig");
+const sv = @import("./sv.zig");
 const com = @import("../util/common.zig");
 
 // Just some shorthand shit to make things easier on me

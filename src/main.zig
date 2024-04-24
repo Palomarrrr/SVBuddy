@@ -7,7 +7,7 @@ const wrapper = @import("./util/backend_wrappers.zig");
 const builtin = @import("builtin");
 
 //TMP
-const sv = @import("./core/libsv.zig");
+const sv = @import("./core/sv.zig");
 const hobj = @import("./core/hitobj.zig");
 
 //=============================================
@@ -60,7 +60,7 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
     }
 
     switch (parent_name[0] - '0') {
-        0 => { // 4-9,11
+        0 => {
             max = 2;
 
             // Get the status of all options in the settings menu
@@ -103,6 +103,12 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
                 else => unreachable,
             }
         },
+        3 => {
+            switch (parent_name[1] - '0') {
+                0 => max = 10,
+                else => unreachable,
+            }
+        },
         else => unreachable,
     }
 
@@ -142,7 +148,10 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         },
         3 => {
             // TO BE IMPLEMENTED
-            std.debug.print("ERROR: Section not implemented yet.\n", .{});
+            switch (parent_name[1] - '0') {
+                0 => try wrapper.applyBarlineFn(CURR_FILE, params),
+                else => unreachable,
+            }
         },
         else => unreachable,
     }
@@ -264,12 +273,25 @@ pub fn main() !void {
     });
 
     //***************************************************
-    //  GIMMICK
+    //  BARLINES
     //***************************************************
 
-    const cont_gimmick_tba = try capy.column(.{ .name = "30" }, .{ // PLACEHOLDER
-        capy.label(.{ .alignment = .Center, .text = "Coming soon (tm)" }),
+    const cont_static_rand_barline = try capy.column(.{ .name = "30" }, .{
+        capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
+        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+        capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "Min BPM" }),
+        capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "Max BPM" }),
+        capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "Percent Chance" }),
+        capy.textField(.{}),
     });
+    //const cont_barlines_tba = try capy.column(.{ .name = "30" }, .{ // PLACEHOLDER
+    //    capy.label(.{ .alignment = .Center, .text = "Coming soon (tm)" }),
+    //});
 
     //***************************************************
     //  SETTINGS
@@ -308,15 +330,18 @@ pub fn main() !void {
     const tab_to_bar = capy.tab(.{ .label = "Note to barline" }, cont_to_barline);
     const tab_to_unhit = capy.tab(.{ .label = "Unhittable note" }, cont_to_unhittable);
 
+    const tab_static_rand_bl = capy.tab(.{ .label = "Random barline" }, cont_static_rand_barline);
+
     const tab_cont_sv = capy.tabs(.{ tab_lin, tab_exp, tab_sin, tab_bez, tab_adj });
     const tab_cont_hobj = capy.tabs(.{ tab_snap, tab_to_bar, tab_to_unhit });
+    const tab_cont_barlines = capy.tabs(.{tab_static_rand_bl});
 
     const tab_cont_1 = capy.tab(.{ .label = "Slider Velocity" }, tab_cont_sv);
     const tab_cont_2 = capy.tab(.{ .label = "Hit Objects" }, tab_cont_hobj);
+    const tab_cont_3 = capy.tab(.{ .label = "Barlines" }, tab_cont_barlines);
     const tab_cont_set = capy.tab(.{ .label = "Settings" }, cont_set);
-    const tab_cont_gimmick = capy.tab(.{ .label = "Gimmicks" }, cont_gimmick_tba);
 
-    const main_tab_cont = capy.tabs(.{ tab_cont_1, tab_cont_2, tab_cont_gimmick, tab_cont_set });
+    const main_tab_cont = capy.tabs(.{ tab_cont_1, tab_cont_2, tab_cont_3, tab_cont_set });
 
     var main_cont: *capy.Container = undefined;
     switch (builtin.os.tag) {

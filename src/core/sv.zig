@@ -30,7 +30,7 @@ pub const TimingPoint = struct {
     /// Number of beats in the measure
     meter: u8 = 4,
     /// What sample set of sounds to use. This really shouldnt be higher than a 4 bit number or you have problems
-    sampleSet: u8 = 1,
+    sample_set: u8 = 1,
     /// This is pretty self explanitory
     volume: u8 = 100,
     /// If the point is inherited(0) or not(1). This is a u1 instead of a bool to make shit easier
@@ -39,7 +39,7 @@ pub const TimingPoint = struct {
     effects: u8 = 0,
 
     pub fn toStr(self: *const TimingPoint) ![]u8 {
-        return try std.fmt.allocPrint(std.heap.page_allocator, "{},{d:.12},{},{},0,{},{},{}\r\n", .{ self.time, self.value, self.meter, self.sampleSet, self.volume, self.is_inh, self.effects });
+        return try std.fmt.allocPrint(std.heap.page_allocator, "{},{d:.12},{},{},0,{},{},{}\r\n", .{ self.time, self.value, self.meter, self.sample_set, self.volume, self.is_inh, self.effects });
     }
     pub fn valueToHumanReadable(self: *const TimingPoint) f32 {
         return if (self.is_inh == 1) 60000.0 / self.value else -100.0 / self.value;
@@ -65,7 +65,7 @@ pub const TimingPoint = struct {
                     self.meter = try fmt.parseUnsigned(u8, str[last..ind], 10);
                 },
                 3 => {
-                    self.sampleSet = try fmt.parseUnsigned(u8, str[last..ind], 10);
+                    self.sample_set = try fmt.parseUnsigned(u8, str[last..ind], 10);
                 },
                 4 => blk: {
                     break :blk;
@@ -125,7 +125,7 @@ pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, 
                 sv_arr.*[i].time = hobj_arr[i].time;
                 //sv_arr.*[i].value = 1.0;
                 sv_arr.*[i].meter = 4.0;
-                sv_arr.*[i].sampleSet = 1;
+                sv_arr.*[i].sample_set = 1;
                 sv_arr.*[i].volume = 100;
                 sv_arr.*[i].effects = 0;
                 sv_arr.*[i].is_inh = 0;
