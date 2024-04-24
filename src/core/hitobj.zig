@@ -136,6 +136,11 @@ pub fn snapNotesTo(hitobj_array: []HitObject, snappings_str: []u8, sv_arr: []sv.
 //**********************************************************
 
 // TODO - Create more and implement
+// Place two after the note.
+//
+// ->   256,192,<time>,2,8,L|352,192,1,NaN,0|0,1:0|1:0,1:0:0:0:
+//
+// also try to decypher what the fuck this is... iirc its a negative length slider but idk
 
 pub fn toUnhittableNote(hitobj_array: *[]HitObject) !void {
     _ = hitobj_array;

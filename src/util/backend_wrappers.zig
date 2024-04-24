@@ -21,7 +21,7 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         const end: i32 = try timing.timeStrToTick(params[2]);
         const val1: f32 = try std.fmt.parseFloat(f32, params[3]);
         const val2: f32 = try std.fmt.parseFloat(f32, params[4]);
-        const val3: f32 = std.fmt.parseFloat(f32, params[5]) catch 0; // FIXME: THIS FAILS -- I think this is fixed?
+        const val3: f32 = std.fmt.parseFloat(f32, params[5]) catch 0;
         const val4: f32 = std.fmt.parseFloat(f32, params[6]) catch 0;
         _ = val4;
 
@@ -37,17 +37,18 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         var tp = try com.create(sv.TimingPoint);
         var hobjs = try com.create(hobj.HitObject);
         defer std.heap.page_allocator.free(hobjs);
-        //defer std.heap.page_allocator.free(tp); // TESTTHIS
+        defer std.heap.page_allocator.free(tp); // TESTTHIS
+        const keep_prev: bool = !(params[9][0] & 0x4);
 
         std.debug.print("Creating objarrs\n", .{});
         if (ext_hobj[2] == 0 or (params[9][0] & 0x1) == 0) { // If no hit objs
             std.debug.print("Making new tpobjarr1\n", .{});
             std.debug.print("bpmext:{any}\n", .{ext_hobj});
-            try sv.createNewSVSection(&tp, null, start, end, 12, bpm[0]); // TODO: ADD SNAPPING
+            try sv.createNewSVSection(&tp, null, start, end, 12, bpm[0], keep_prev); // TODO: ADD SNAPPING
         } else {
-            try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs);
+            if (params[9][0] & 0x1 == 1) try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs); // Check if we even want to snap things to the notes
             std.debug.print("made tpobjarr1\n", .{});
-            try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm[0]);
+            try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm[0], keep_prev);
         }
 
         if (ext_tp[2] != 0 and (params[9][0] & 0x4) == 0) { // If points existed previously | this is only important if we have uninherited timing points
@@ -56,10 +57,12 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             std.debug.print("made tpobjarr2\n", .{});
             defer std.heap.page_allocator.free(tp2);
 
-            const n_uinh = tp2.len - sv.getNumInherited(tp2);
+            const n_inh = sv.getNumInherited(tp2);
+            const n_uinh = tp2.len - n_inh;
 
             if (n_uinh != 0) { // if there are uninherited points in the section
                 var uinh = if (params[9][0] & 0x8 != 0) try std.heap.page_allocator.alloc(sv.TimingPoint, n_uinh * 2) else try std.heap.page_allocator.alloc(sv.TimingPoint, n_uinh); // build an array w/ only uninherited
+                //defer std.heap.page_allocator.free(uinh); // TODO: CHECK IF THIS FUCKS THINGS
                 var i: usize = 0;
                 for (tp2) |p| {
                     if (p.is_inh == 1) {

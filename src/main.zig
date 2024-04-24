@@ -66,27 +66,20 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
             // Get the status of all options in the settings menu
             // TODO: FUCK YOU FOR DOING THIS YOU CAN DO BETTER... ALSO MAKE AN ENUM FOR THIS OR SOMETHING
             const check_wg = (try parent_wgt.*.getChildAt(4)).as(capy.CheckBox);
-            const check = check_wg.*.checked.get();
             const check_wg2 = (try parent_wgt.*.getChildAt(5)).as(capy.CheckBox);
-            const check2 = check_wg2.*.checked.get();
             const check_wg3 = (try parent_wgt.*.getChildAt(6)).as(capy.CheckBox);
-            const check3 = check_wg3.*.checked.get();
             const check_wg4 = (try parent_wgt.*.getChildAt(7)).as(capy.CheckBox);
-            const check4 = check_wg4.*.checked.get();
             const check_wg5 = (try parent_wgt.*.getChildAt(8)).as(capy.CheckBox);
-            const check5 = check_wg5.*.checked.get();
             const check_wg6 = (try parent_wgt.*.getChildAt(9)).as(capy.CheckBox);
-            const check6 = check_wg6.*.checked.get();
             const check_wg7 = (try parent_wgt.*.getChildAt(11)).as(capy.CheckBox);
-            const check7 = check_wg7.*.checked.get();
 
-            if (check) OPTION_FLAG |= 0x1;
-            if (check2) OPTION_FLAG |= 0x2;
-            if (check3) OPTION_FLAG |= 0x4;
-            if (check4) OPTION_FLAG |= 0x8;
-            if (check5) OPTION_FLAG |= 0x10;
-            if (check6) OPTION_FLAG |= 0x20;
-            if (check7) OPTION_FLAG |= 0x40;
+            if (check_wg.*.checked.get()) OPTION_FLAG |= 0x1;
+            if (check_wg2.*.checked.get()) OPTION_FLAG |= 0x2;
+            if (check_wg3.*.checked.get()) OPTION_FLAG |= 0x4;
+            if (check_wg4.*.checked.get()) OPTION_FLAG |= 0x8;
+            if (check_wg5.*.checked.get()) OPTION_FLAG |= 0x10;
+            if (check_wg6.*.checked.get()) OPTION_FLAG |= 0x20;
+            if (check_wg7.*.checked.get()) OPTION_FLAG |= 0x40;
             //if (check8) OPTION_FLAG |= 0x80;
         },
         1 => {
@@ -305,7 +298,7 @@ pub fn main() !void {
         capy.label(.{ .alignment = .Left, .text = "SV Settings" }),
         capy.checkBox(.{ .label = "Snap SV to notes", .checked = true }),
         capy.checkBox(.{ .label = "Normalize SV over BPM changes", .checked = true }),
-        capy.checkBox(.{ .label = "Overwrite ALL previous SV (this includes uninherited points)", .checked = false }),
+        capy.checkBox(.{ .label = "Overwrite previous SV", .checked = false }),
         capy.checkBox(.{ .label = "Add SV to all timing points in the effect", .checked = false }),
         capy.checkBox(.{ .label = "Add SV to all barlines in the effect", .checked = false }), // Will have to get offset of each timing point and then find every barline that would exist in it
         capy.checkBox(.{ .label = "Points inherit effects from previous points", .checked = false }), // Will have to get offset of each timing point and then find every barline that would exist in it
@@ -368,6 +361,5 @@ pub fn main() !void {
     try window.set(main_cont);
 
     window.show();
-
     capy.runEventLoop();
 }

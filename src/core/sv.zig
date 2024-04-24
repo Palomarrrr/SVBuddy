@@ -114,11 +114,17 @@ inline fn svBpmAdjust(sv: f32, bpm_old: f32, bpm_new: f32) f32 {
 //                  SV POINT MANIPULATION
 //**********************************************************
 
-pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, start: i32, end: i32, snap: u16, bpm: f32) !void {
+// TODO: TEST IF KEEP_PREVIOUS WORKS
+//       ALSO FUCKING CLEAN THIS
+pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, start: i32, end: i32, snap: u16, bpm: f32, keep_previous: bool) !void {
     if (obj_arr) |hobj_arr| { // If we are putting sv over a section with hitobjs
 
-        if (hobj_arr.len > getNumInherited(sv_arr.*)) // Just incase we are going over a section that already has some sv
-            sv_arr.* = try std.heap.page_allocator.realloc(sv_arr.*, hobj_arr.len + (sv_arr.len - getNumInherited(sv_arr.*))); // Make sure to not count the uninherited points
+        if (!keep_previous) {
+            if (hobj_arr.len > getNumInherited(sv_arr.*)) // Just incase we are going over a section that already has some sv
+                sv_arr.* = try std.heap.page_allocator.realloc(sv_arr.*, hobj_arr.len + (sv_arr.len - getNumInherited(sv_arr.*))); // Make sure to not count the uninherited points
+        } else {
+            sv_arr.* = try std.heap.page_allocator.realloc(sv_arr.*, hobj_arr.len + sv_arr.*.len); // Make sure to not count the uninherited points
+        }
 
         for (0..hobj_arr.len) |i| { // TODO: make this not place if there is a hobj on the same
             if (sv_arr.*[i].is_inh == 0) {
@@ -132,16 +138,17 @@ pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, 
             }
         }
     } else { // No hitobjs given
-        var i: f32 = @floatFromInt(start);
-        var p: usize = 0;
-        const inc: f32 = 60000.0 / bpm / @as(f32, @floatFromInt(snap));
-        std.debug.print("inc:{}\n", .{inc});
+        if (!keep_previous or sv_arr.*.len == 0) { // If we arent keeping prev OR if we dont have anything there
+            var i: f32 = @floatFromInt(start);
+            var p: usize = 0;
+            const inc: f32 = 60000.0 / bpm / @as(f32, @floatFromInt(snap));
 
-        sv_arr.* = try std.heap.page_allocator.alloc(TimingPoint, @intCast(@divTrunc((end - start), @as(i32, @intFromFloat(inc))) + 1)); // Allocate the number of points we need
+            sv_arr.* = try std.heap.page_allocator.alloc(TimingPoint, @intCast(@divTrunc((end - start), @as(i32, @intFromFloat(inc))) + 1)); // Allocate the number of points we need
 
-        while (p < sv_arr.*.len) : (p += 1) {
-            sv_arr.*[p].time = @intFromFloat(@round(i));
-            i += inc;
+            while (p < sv_arr.*.len) : (p += 1) {
+                sv_arr.*[p].time = @intFromFloat(@round(i));
+                i += inc;
+            }
         }
     }
 }
@@ -201,7 +208,8 @@ pub fn mergeSvArrs(dest: *[]TimingPoint, src: []TimingPoint) !void {
     }
 
     //std.heap.raw_c_allocator.free(dest.*); // Free old content
-    dest.* = retarr; // Assign to return array
+    std.heap.page_allocator.free(dest.*); // TODO: TEST THIS TO SEE IF IT STILL BREAKS
+    dest.* = retarr; // Assign to return array | FIXME: THIS CURRENTLY LEAKS MEMORY
 }
 
 //**********************************************************
