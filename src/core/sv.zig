@@ -45,7 +45,6 @@ pub const TimingPoint = struct {
         return if (self.is_inh == 1) 60000.0 / self.value else -100.0 / self.value;
     }
     pub fn fromStr(self: *TimingPoint, str: []u8) !void {
-        std.debug.print("GOT: `{s}`\n", .{str});
         var field: u8 = 0;
         var last: usize = 0;
 
@@ -53,7 +52,6 @@ pub const TimingPoint = struct {
 
         while (field < 7) : (field += 1) {
             const ind = ascii.indexOfIgnoreCasePos(str, last, &[_]u8{','}) orelse return TimingPointError.IncompleteLine;
-            std.debug.print("`{s}`\n", .{str[last..ind]});
             switch (field) {
                 0 => {
                     self.time = try fmt.parseInt(i32, str[last..ind], 10);
@@ -82,11 +80,11 @@ pub const TimingPoint = struct {
             }
             last = ind + 1;
         }
-        std.debug.print("`{s}`\n", .{str[last..eol]});
+        //std.debug.print("final: `{s}`\n", .{str[last..eol]});
         self.effects = try fmt.parseUnsigned(u8, str[last..eol], 10);
-        std.debug.print("MADE:{s}\n", .{try self.toStr()});
+        //std.debug.print("Finished line\n", .{});
     }
-    // MAJOR-FIXME: FOR SOME REASON FIELDS 3,4,6,8 ALL DISPLAY 170 INSTEAD OF 0
+    // MAJOR-FIXME: FOR SOME REASON FIELDS 3,4,6,8 ALL DISPLAY 170 INSTEAD OF 0 - SHOULD BE FIXED
 };
 //**********************************************************
 //                      VOLUME TOOLS
@@ -176,13 +174,16 @@ pub fn pruneUnusedSv(sv_arr: *[]TimingPoint, obj_arr: []hitobj.HitObject) !void 
             //      If this really becomes an issue you could make this also check the point 2 lines before/after
             //      j for a timing point that has time != j.time
             //      just for the rare case of having (s t s) all on the same time (s = sv point, t = timing)
-            if (j > 0 and sv_arr.*[j - 1].is_inh == 1 and sv_arr.*[j - 1].time == sv_arr.*[j].time) {
-                new_sv_arr[k] = sv_arr.*[j];
-                k += 1;
-            } else if (j < sv_arr.*.len - 1 and sv_arr.*[j + 1].is_inh == 1 and sv_arr.*[j + 1].time == sv_arr.*[j].time) {
-                new_sv_arr[k] = sv_arr.*[j];
-                k += 1;
-            }
+            //============NOT SURE IF THIS WORKS PROPERLY
+            //if (j > 0 and sv_arr.*[j - 1].is_inh == 1 and sv_arr.*[j - 1].time == sv_arr.*[j].time) {
+            //    std.debug.print("FOUND REPEAT TYPE A\n", .{});
+            //    new_sv_arr[k] = sv_arr.*[j];
+            //    k += 1;
+            //} else if (j < sv_arr.*.len - 1 and sv_arr.*[j + 1].is_inh == 1 and sv_arr.*[j + 1].time == sv_arr.*[j].time) {
+            //    std.debug.print("FOUND REPEAT TYPE B\n", .{});
+            //    new_sv_arr[k] = sv_arr.*[j];
+            //    k += 1;
+            //}
             j += 1;
         }
     }

@@ -36,21 +36,21 @@ pub const HitObject = struct {
     effects: u16 = 0,
 
     pub fn toStr(self: *const HitObject) ![]u8 {
-        return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
-        //return try std.fmt.allocPrint(heap.raw_c_allocator, "{},{},{},{},{},end\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
+        //return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
+        return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},{s}\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound, self.objectParams });
     }
 
     pub fn fromStr(self: *HitObject, str: []u8) !void {
-        std.debug.print("GOT: `{s}`\n", .{str});
         var field: u8 = 0;
         var last: usize = 0;
 
+        //std.debug.print("FULL: `{s}`\n", .{str});
         const eol = if (ascii.indexOfIgnoreCase(str, &[_]u8{ '\r', '\n' })) |ret| ret else str.len;
-        std.debug.print("LEN: {}\n", .{eol});
+        //std.debug.print("SNIPPED: `{s}`\n", .{str[0..eol]});
 
         while (field < 5) : (field += 1) {
             const ind = ascii.indexOfIgnoreCasePos(str, last, &[_]u8{','}) orelse return HitObjError.IncompleteLine;
-            std.debug.print("`{s}`\n", .{str[last..ind]});
+            //std.debug.print("`{s}`\n", .{str[last..ind]});
             switch (field) {
                 0 => {
                     self.x = try fmt.parseInt(i32, str[last..ind], 10);
@@ -75,9 +75,8 @@ pub const HitObject = struct {
         }
         // THIS ISNT IMPLEMENTED YET SO WHY HAVE IT EXIST
         //std.debug.print("`{s}`\n", .{str[last..eol]});
-        //self.objectParams = try std.heap.page_allocator.alloc(u8, (eol - last));
-        //@memcpy(self.objectParams, str[last..eol]);
-        std.debug.print("MADE:{s}\n", .{try self.toStr()});
+        self.objectParams = try std.heap.page_allocator.alloc(u8, (eol - last));
+        @memcpy(self.objectParams, str[last..eol]);
     }
 
     pub fn deinit(self: *HitObject) void {
@@ -91,7 +90,7 @@ pub const HitObject = struct {
         var d_i: usize = 0;
         const time_per_measure: f32 = 60000.0 / bpm;
 
-        std.debug.print("finding diffs\n", .{});
+        //std.debug.print("finding diffs\n", .{});
         for (list_of_snappings, 0..list_of_snappings.len) |s, i| {
             std.debug.print("i={}\n", .{i});
             const time_per_snap: f32 = time_per_measure / @as(f32, @floatFromInt(s));
@@ -104,11 +103,11 @@ pub const HitObject = struct {
             if (diff < d) {
                 d = diff; // find the smallest
                 d_i = i;
-                std.debug.print("new smallest {}:{}\n", .{ d, list_of_snappings[i] });
+                //std.debug.print("new smallest {}:{}\n", .{ d, list_of_snappings[i] });
             }
         }
 
-        std.debug.print("NEW OFFSET: {} - {} = {}\n", .{ self.time, diffs[d_i], self.time - diffs[d_i] });
+        //std.debug.print("NEW OFFSET: {} - {} = {}\n", .{ self.time, diffs[d_i], self.time - diffs[d_i] });
         self.time = (self.time - diffs[d_i]) + @rem(bpm_offset, @as(i32, @intFromFloat(@round(time_per_measure)))); // snap the note
     }
 };
@@ -135,15 +134,36 @@ pub fn snapNotesTo(hitobj_array: []HitObject, snappings_str: []u8, sv_arr: []sv.
 //                        EFFECTS
 //**********************************************************
 
-// TODO - Create more and implement
-// Place two after the note.
-//
-// ->   256,192,<time>,2,8,L|352,192,1,NaN,0|0,1:0|1:0,1:0:0:0:
-//
-// also try to decypher what the fuck this is... iirc its a negative length slider but idk
+// So... This might be too rng to be *fully* automated....
+pub fn toUnhittableNote(hitobj_array: *[]HitObject, offset: i32) !void {
+    //hitobj_array.* = try std.heap.page_allocator.realloc(hitobj_array.*, hitobj_array.*.len * 2);
+    var ret_array = try std.heap.page_allocator.alloc(HitObject, hitobj_array.*.len * 2);
+    //defer std.heap.page_allocator.free(hitobj_array.*);
 
-pub fn toUnhittableNote(hitobj_array: *[]HitObject) !void {
-    _ = hitobj_array;
+    var i: usize = 0;
+    var j: usize = 0;
+    while (i < hitobj_array.*.len) : (i += 2) {
+        ret_array[i] = hitobj_array.*[j];
+        //ret_array[i].effects = SomeValue; // <= IMPLEMENT LATER
+        // ret_array[i + 1] = HitObject{ // NaN slider | Thanks Xavy
+        //     .x = 256,
+        //     .y = 192,
+        //     .time = hitobj_array.*[j].time + offset, // I guess this might work?
+        //     .type = 2,
+        //     .hitSound = 8,
+        //     .objectParams = @constCast("L|352:192,1,NaN,0|0,1:0|1:0,1:0:0:0:"), // Not sure if i need to place 2 or if just 1 will do
+        // };
+        //256,192,674,6,4,L|352:192,1,NaN | From Mew
+        // Other taken from xavy
+
+        // TODO: Remove this awful janky fix... Find a fucking better way
+        // For some god-forsaken reason the approach above doesn't work and I'm forced to do this bs
+        try ret_array[i + 1].fromStr(@constCast("256,192,0,2,8,L|352:192,1,NaN,0|0,1:0|1:0,1:0:0:0:\r\n"));
+        ret_array[i + 1].time = hitobj_array.*[j].time + offset;
+        j += 1;
+    }
+
+    hitobj_array.* = ret_array;
 }
 
 // Need this to return a slice instead of an array. either that or i need to find a good way to turn the result into a slice

@@ -28,6 +28,7 @@ pub const OsuSectionError = error{
 pub const OsuObjErr = error{
     FoundTooManyFields,
     PointDNE,
+    NoPointsGiven,
 };
 
 const HEADER_MAP = [_][]const u8{ "General", "Editor", "Metadata", "Difficulty", "Events", "TimingPoints", "HitObjects" };
@@ -164,7 +165,6 @@ pub const OsuFile = struct {
         return tmp_path;
     }
 
-    // TODO: see if you can return the effect flags off the START in the return value
     pub fn extentsOfSection(self: *OsuFile, lower: i32, upper: i32, mode: anytype) ![3]usize {
         if (self.file == null) return OsuFileIOError.FileDNE;
         var retval = [_]usize{0} ** 3;
@@ -194,7 +194,8 @@ pub const OsuFile = struct {
             var f: usize = 0;
 
             bytes_read = try self.file.?.readAll(&buffer);
-            const eol = std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse 0;
+            const eol = std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse bytes_read;
+            //std.debug.print("GOT: `{s}`\n", .{buffer});
             var last_i_b: usize = 0;
 
             _char: while (eol != 0) {
@@ -202,18 +203,22 @@ pub const OsuFile = struct {
                 if (i_b >= eol) break :_char; // We shouldnt be reading past the end
                 if (f == t) { // if the current field == the target
                     const found_time = try std.fmt.parseInt(i32, buffer[last_i_b..i_b], 10);
+                    //std.debug.print("Found point at `{}`\n", .{found_time});
+                    //std.debug.print("\tBounds: `{}`->`{}`\n", .{ lower, upper });
                     if (lower <= found_time and found_time <= upper) {
                         if (!last_in_range) {
                             retval[0] = @intCast(try self.file.?.getPos() - bytes_read); // f->t transition
+                            //std.debug.print("First!\n", .{});
                         }
                         last_in_range = true;
                         retval[2] += 1;
+                        //std.debug.print("Found point!\n", .{});
                     } else {
                         //if (last_in_range or found_time > upper) {
                         if (found_time > upper) { // This should be saying the same thing
                             retval[1] = @intCast(try self.file.?.getPos() - bytes_read); // Set the cursor at the start of the line
                         } else {
-                            retval[0] = @intCast(((try self.file.?.getPos()) - bytes_read) + eol); // Set the cursor at the end of the current line
+                            retval[0] = @intCast(((try self.file.?.getPos() - bytes_read)) + eol); // Set the cursor at the end of the current line
                         }
                     }
                     break :_char;
@@ -228,21 +233,29 @@ pub const OsuFile = struct {
         if (retval[0] == 0) retval[0] = try self.findEndOfSectionOffset(self.section_offsets[m] + 1); // Same w/ start
 
         // DEBUG
-        //try self.file.?.seekTo(retval[0] - 10);
+        //try self.file.?.seekTo(retval[0] - 3);
         //std.debug.print("START:{}:", .{retval[0]});
         //for (0..20) |_| {
         //    var b = [_]u8{0};
         //    _ = try self.file.?.read(&b);
-        //    std.debug.print("`{}`,", .{b[0]});
+        //    if (b[0] > 32) {
+        //        std.debug.print("`{c}`,", .{b[0]});
+        //    } else {
+        //        std.debug.print("`_{}`,", .{b[0]});
+        //    }
         //}
         //std.debug.print("\n", .{});
 
-        //try self.file.?.seekTo(retval[1] - 10);
+        //try self.file.?.seekTo(retval[1] - 3);
         //std.debug.print("END:{}:", .{retval[1]});
         //for (0..20) |_| {
         //    var b = [_]u8{0};
         //    _ = try self.file.?.read(&b);
-        //    std.debug.print("`{}`,", .{b[0]});
+        //    if (b[0] > 32) {
+        //        std.debug.print("`{c}`,", .{b[0]});
+        //    } else {
+        //        std.debug.print("`_{}`,", .{b[0]});
+        //    }
         //}
         //std.debug.print("\n", .{});
         // DEBUG
@@ -309,7 +322,7 @@ pub const OsuFile = struct {
             }
             fields += 1;
         }
-        std.debug.print("BPMRET: {s}, {s}\n", .{ buffer[bpmoffset[0]..bpmoffset[1]], buffer[0 .. bpmoffset[0] - 1] });
+        //std.debug.print("BPMRET: {s}, {s}\n", .{ buffer[bpmoffset[0]..bpmoffset[1]], buffer[0 .. bpmoffset[0] - 1] });
         return [2]f32{ 60000.0 / try fmt.parseFloat(f32, buffer[bpmoffset[0]..bpmoffset[1]]), try fmt.parseFloat(f32, buffer[0 .. bpmoffset[0] - 1]) };
     }
 
@@ -319,6 +332,7 @@ pub const OsuFile = struct {
     }
 
     pub fn placeSection(self: *OsuFile, start: usize, end: usize, arr: anytype) !void {
+        std.debug.print("IN: placeSection\n", .{});
         if (self.file == null) return OsuFileIOError.FileDNE;
 
         // This is fucked... just let me use an if statement please
@@ -341,15 +355,20 @@ pub const OsuFile = struct {
             len -= 1;
         }
 
+        std.debug.print("Allocing for file name\n", .{});
         const tmp_pref: []u8 = try std.heap.page_allocator.alloc(u8, len);
+        std.debug.print("Copying path\n", .{});
         @memcpy(tmp_pref, self.path[0..len]);
+        std.debug.print("Creating path\n", .{});
         const tmp_path = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ tmp_pref, @constCast("tmp.txt") });
         defer std.heap.page_allocator.free(tmp_path);
 
+        std.debug.print("Creating file at path\n", .{});
         const tmpfp: fs.File = try fs.createFileAbsolute(tmp_path, .{ .read = true, .truncate = true });
 
         try self.file.?.seekTo(0);
 
+        std.debug.print("Copying old conts\n", .{});
         var t = [_]u8{0};
         var l: usize = 1;
         for (0..start) |_| {
@@ -359,12 +378,16 @@ pub const OsuFile = struct {
         if (t[0] == '\r') try tmpfp.writeAll(&[_]u8{10});
 
         // Insert the new stuff
+        std.debug.print("Inserting new: arr.len = {}\n", .{arr.len});
         for (arr) |a| {
-            _ = try tmpfp.writeAll(try a.toStr());
+            const s = try a.toStr();
+            defer std.heap.page_allocator.free(s);
+            _ = try tmpfp.writeAll(s);
         }
 
         try self.file.?.seekTo(end); // pick at the end of the section we want to replace
 
+        std.debug.print("Resuming\n", .{});
         while (l == 1) {
             l = try self.file.?.readAll(&t);
             _ = try tmpfp.writeAll(&t);
@@ -373,10 +396,13 @@ pub const OsuFile = struct {
         self.file.?.close();
         tmpfp.close();
 
+        std.debug.print("Overwriting old file\n", .{});
         try fs.renameAbsolute(tmp_path, self.path); // Move
 
         // This shouldn't cause a leak I think?
+        std.debug.print("Fixing struct file descriptor\n", .{});
         self.file = try fs.openFileAbsolute(self.path, .{ .mode = .read_write });
+        std.debug.print("Finding new section offsets\n", .{});
         try self.findSectionOffsets();
     }
 
@@ -461,7 +487,7 @@ pub const OsuFile = struct {
         };
         var buffer = [_]u8{0} ** 64;
 
-        arr.* = if (size != 0) (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), size)) else (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), BLOCK_SZ)); // Allocate `size` elements if specified. else realloc as much as necessary
+        arr.* = if (size != 0) (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), size)) else return OsuObjErr.NoPointsGiven;
 
         try self.file.?.seekTo(offset);
 
@@ -470,12 +496,14 @@ pub const OsuFile = struct {
         _for: for (0..arr.*.len) |i| {
             bytes_read = try self.file.?.readAll(&buffer);
             if (bytes_read <= 0) break :_for;
-            std.debug.print("``{s}``\n", .{buffer});
 
             const eol = if (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{ '\r', '\n' })) |e| e else buffer.len - 2; // -2 to compensate to the + 2 later on
 
             if (eol < 15) { // the shortest possible line you could create is 15 chars long
-                if (bytes_read >= 64) return OsuFileIOError.IncompleteFile; // this is only true if we are at the end of a section
+                if (bytes_read >= 64) {
+                    std.debug.print("INCOMPLETE BUFFER: {s}\n", .{buffer});
+                    return OsuFileIOError.IncompleteFile; // this is only true if we are at the end of a section
+                }
                 continue;
             }
 
@@ -493,76 +521,6 @@ pub const OsuFile = struct {
         }
     }
 };
-
-const BLOCK_SZ = 128; // This is kinda dumb
-
-// TODO: MERGE THIS INTO OsuFile STRUCT
-pub fn load() type {
-    return struct {
-        var buffer = [_]u8{0} ** 64;
-        var str_buff = [_]u8{0} ** 64;
-        var i_strbuf: u8 = 0;
-
-        pub fn hitObjArray(file: fs.File, offset: usize, size: usize, hitobj_array: *[]hitobj.HitObject) !usize {
-            hitobj_array.* = if (size != 0) (try std.heap.page_allocator.alloc(hitobj.HitObject, size)) else (try std.heap.page_allocator.alloc(hitobj.HitObject, BLOCK_SZ)); // Allocate `size` elements if specified. else realloc as much as necessary
-
-            try file.seekTo(offset + 1); // Go to the offset
-
-            for (0..hitobj_array.*.len) |curr_point| {
-                const bytes_read = try file.readAll(&buffer); // Read in the new data
-                if (bytes_read == 0) break;
-                //if (bytes_read < buffer.len) { // If we read less than the buffer can hold, then we must be at the end
-                //return OsuFileIOError.IncompleteFile;
-                //}
-                for (buffer, 0..buffer.len) |c, i| {
-                    if (c <= '\r') {
-                        //hitobj_array.*[curr_point] = try StrToHitObject(); // Convert the string and load it into the array
-                        try hitobj_array.*[curr_point].fromStr(&buffer);
-                        try file.seekBy(@as(isize, @intCast(i)) - @as(isize, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data.
-                        i_strbuf = 0; // Set this iterator to 0
-                        @memset(&str_buff, 0); // Clear out the string buffer
-                        break;
-                    } else {
-                        str_buff[i_strbuf] = c;
-                        i_strbuf += 1;
-                    }
-                }
-                @memset(&buffer, 0); // Clear the buffer
-            }
-
-            return @intCast(try file.getPos() - 1); // Return the last position
-        }
-
-        pub fn timingPointArray(file: fs.File, offset: usize, size: usize, sv_array: *[]sv.TimingPoint) !usize {
-            sv_array.* = if (size != 0) (try std.heap.page_allocator.alloc(sv.TimingPoint, size)) else (try std.heap.page_allocator.alloc(sv.TimingPoint, BLOCK_SZ)); // Allocate `size` elements if specified. else realloc as much as necessary
-
-            try file.seekTo(offset + 1); // Go to the offset
-
-            for (0..sv_array.len) |curr_point| {
-                const bytes_read = try file.readAll(&buffer);
-                if (bytes_read == 0) break;
-                //if (bytes_read < buffer.len) { // If we read less than the buffer can hold, then we must be at the end
-                //return OsuFileIOError.IncompleteFile;
-                //}
-                for (buffer, 0..buffer.len) |c, i| {
-                    if (c <= '\r') {
-                        //sv_array.*[curr_point] = try StrToTimingPoint(); // Convert the string and load it into the array
-                        try sv_array.*[curr_point].fromStr(&buffer);
-                        try file.seekBy(@as(isize, @intCast(i)) - @as(isize, @intCast(bytes_read)) + 2); // Seek back the difference so that we don't miss data.
-                        i_strbuf = 0; // Set this iterator to 0
-                        @memset(&str_buff, 0); // Clear out the string buffer
-                        break;
-                    } else {
-                        str_buff[i_strbuf] = c;
-                        i_strbuf += 1;
-                    }
-                }
-                @memset(&buffer, 0); // Clear the buffer
-            }
-            return @intCast(try file.getPos() - 1); // Return the last position
-        }
-    };
-}
 
 // Shitty internal fn
 inline fn isEq(a: []const u8, b: []const u8) bool {

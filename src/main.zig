@@ -14,7 +14,7 @@ const hobj = @import("./core/hitobj.zig");
 // TODO
 //=============================================
 //  * IMPLEMENT VOLUME CHANGES
-//  * FIX THE PROBLEM WITH VALUES 3,4,6,8 DEFAULTING TO 170
+//  * FIX THE PROBLEM WITH VALUES 3,4,6,8 DEFAULTING TO 170 - Should be fixed
 //  * ADD KIAI CHECKBOX / AUTO KIAI ON AND OFF | SAME COULD GO FOR VOLUME
 //  * IMPLEMENT SONG PICKER W/ SOME KIND OF FUZZY SEARCH
 //=============================================
@@ -44,6 +44,11 @@ var CURR_FILE: ?*osufile.OsuFile = null;
 var OPTION_FLAG: u8 = 0;
 var CURR_FILE_LABEL: ?*capy.Label = null;
 
+fn undoButton(btn: *capy.Button) anyerror!void {
+    _ = btn;
+    try wrapper.undoLast(CURR_FILE);
+}
+
 fn buttonClick(btn: *capy.Button) anyerror!void {
     const parent_wgt = btn.*.getParent().?.as(capy.Container);
     const parent_name = parent_wgt.widget.?.name.get() orelse unreachable;
@@ -62,25 +67,18 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
     switch (parent_name[0] - '0') {
         0 => {
             max = 2;
+            const locations = [_]usize{ 4, 5, 6, 7, 8, 9, 11 }; // Edit this when adding more boolean vars
 
-            // Get the status of all options in the settings menu
-            // TODO: FUCK YOU FOR DOING THIS YOU CAN DO BETTER... ALSO MAKE AN ENUM FOR THIS OR SOMETHING
-            const check_wg = (try parent_wgt.*.getChildAt(4)).as(capy.CheckBox);
-            const check_wg2 = (try parent_wgt.*.getChildAt(5)).as(capy.CheckBox);
-            const check_wg3 = (try parent_wgt.*.getChildAt(6)).as(capy.CheckBox);
-            const check_wg4 = (try parent_wgt.*.getChildAt(7)).as(capy.CheckBox);
-            const check_wg5 = (try parent_wgt.*.getChildAt(8)).as(capy.CheckBox);
-            const check_wg6 = (try parent_wgt.*.getChildAt(9)).as(capy.CheckBox);
-            const check_wg7 = (try parent_wgt.*.getChildAt(11)).as(capy.CheckBox);
+            // TODO: Test this shit
+            var flag: u8 = 0x1;
+            for (locations) |l| {
+                if (((try parent_wgt.*.getChildAt(l)).as(capy.CheckBox).*.checked.get())) {
+                    OPTION_FLAG |= flag; // Nightmare fuel
+                }
+                flag <<= 1;
+            }
 
-            if (check_wg.*.checked.get()) OPTION_FLAG |= 0x1;
-            if (check_wg2.*.checked.get()) OPTION_FLAG |= 0x2;
-            if (check_wg3.*.checked.get()) OPTION_FLAG |= 0x4;
-            if (check_wg4.*.checked.get()) OPTION_FLAG |= 0x8;
-            if (check_wg5.*.checked.get()) OPTION_FLAG |= 0x10;
-            if (check_wg6.*.checked.get()) OPTION_FLAG |= 0x20;
-            if (check_wg7.*.checked.get()) OPTION_FLAG |= 0x40;
-            //if (check8) OPTION_FLAG |= 0x80;
+            std.debug.print("OPTIONS: {b}\n", .{OPTION_FLAG}); //DBG
         },
         1 => {
             switch (parent_name[1] - '0') {
@@ -92,7 +90,8 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         },
         2 => {
             switch (parent_name[1] - '0') {
-                0 => max = 6,
+                0, 2 => max = 6,
+                1 => max = 8,
                 else => unreachable,
             }
         },
@@ -128,19 +127,18 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         },
         1 => {
             switch (parent_name[1] - '0') {
-                0, 1, 2, 3, 4 => try wrapper.applySVFn(CURR_FILE, params),
+                0...4 => try wrapper.applySVFn(CURR_FILE, params),
                 else => unreachable,
             }
         },
         2 => {
             std.debug.print("C\n", .{});
             switch (parent_name[1] - '0') {
-                0, 1, 2 => try wrapper.applyHObjFn(CURR_FILE, params),
+                0...2 => try wrapper.applyHObjFn(CURR_FILE, params),
                 else => unreachable,
             }
         },
         3 => {
-            // TO BE IMPLEMENTED
             switch (parent_name[1] - '0') {
                 0 => try wrapper.applyBarlineFn(CURR_FILE, params),
                 else => unreachable,
@@ -261,7 +259,9 @@ pub fn main() !void {
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
         capy.label(.{ .alignment = .Left, .text = "Start Time" }),
         capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        capy.label(.{ .alignment = .Left, .text = "End time" }),
+        capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "Offset" }),
         capy.textField(.{}),
     });
 
@@ -312,6 +312,13 @@ pub fn main() !void {
     //***************************************************
 
     CURR_FILE_LABEL = capy.label(.{ .alignment = .Left, .text = "No file selected..." });
+    const header_bar = capy.row(.{ .name = "z" }, .{
+        CURR_FILE_LABEL orelse unreachable,
+        capy.alignment(
+            .{ .x = 1, .y = 0.5 },
+            capy.button(.{ .label = "Undo", .onclick = @ptrCast(&undoButton) }),
+        ),
+    });
 
     const tab_lin = capy.tab(.{ .label = "Linear" }, cont_lin);
     const tab_exp = capy.tab(.{ .label = "Exponential" }, cont_exp);
@@ -341,14 +348,16 @@ pub fn main() !void {
         .linux => {
             const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/Zig/SVUI/test_files/svbuddy.png", .scaling = .Fit });
             main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
-                CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
+                //CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
+                header_bar,
                 TEST_IMG,
                 main_tab_cont,
             });
         },
         else => { // Im not sure if images are supported on other platforms
             main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
-                CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
+                //CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
+                header_bar,
                 main_tab_cont,
             });
         },
