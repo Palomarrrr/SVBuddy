@@ -29,15 +29,15 @@ pub const HitObject = struct {
     y: i32 = 0,
     time: i32 = 0,
     type: u8 = 0,
-    hitSound: u8 = 0,
-    objectParams: []u8,
+    hit_sound: u8 = 0,
+    object_params: []u8,
 
     // fields to keep track of the shit we've done
     effects: u16 = 0,
 
     pub fn toStr(self: *const HitObject) ![]u8 {
-        //return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound });
-        return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},{s}\r\n", .{ self.x, self.y, self.time, self.type, self.hitSound, self.objectParams });
+        //return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hit_sound });
+        return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},{s}\r\n", .{ self.x, self.y, self.time, self.type, self.hit_sound, self.object_params });
     }
 
     pub fn fromStr(self: *HitObject, str: []u8) !void {
@@ -65,7 +65,7 @@ pub const HitObject = struct {
                     self.type = try fmt.parseUnsigned(u8, str[last..ind], 10);
                 },
                 4 => {
-                    self.hitSound = try fmt.parseUnsigned(u8, str[last..ind], 10);
+                    self.hit_sound = try fmt.parseUnsigned(u8, str[last..ind], 10);
                 },
                 else => {
                     return HitObjError.IncompleteLine;
@@ -75,12 +75,12 @@ pub const HitObject = struct {
         }
         // THIS ISNT IMPLEMENTED YET SO WHY HAVE IT EXIST
         //std.debug.print("`{s}`\n", .{str[last..eol]});
-        self.objectParams = try std.heap.page_allocator.alloc(u8, (eol - last));
-        @memcpy(self.objectParams, str[last..eol]);
+        self.object_params = try std.heap.page_allocator.alloc(u8, (eol - last));
+        @memcpy(self.object_params, str[last..eol]);
     }
 
     pub fn deinit(self: *HitObject) void {
-        std.heap.page_allocator.free(self.objectParams);
+        std.heap.page_allocator.free(self.object_params);
     }
 
     // Given a NUMERIC(not a string) list of snappings and a bpm, snap to the snapping w/ the smallest difference
@@ -109,6 +109,15 @@ pub const HitObject = struct {
 
         //std.debug.print("NEW OFFSET: {} - {} = {}\n", .{ self.time, diffs[d_i], self.time - diffs[d_i] });
         self.time = (self.time - diffs[d_i]) + @rem(bpm_offset, @as(i32, @intFromFloat(@round(time_per_measure)))); // snap the note
+    }
+
+    pub inline fn isDon(self: *HitObject) bool {
+        if (self.hit_sound & 0x1) return true;
+        return false;
+    }
+    pub inline fn isFinisher(self: *HitObject) bool {
+        if (self.hit_sound & 0x4) return true;
+        return false;
     }
 };
 
@@ -150,8 +159,8 @@ pub fn toUnhittableNote(hitobj_array: *[]HitObject, offset: i32) !void {
         //     .y = 192,
         //     .time = hitobj_array.*[j].time + offset, // I guess this might work?
         //     .type = 2,
-        //     .hitSound = 8,
-        //     .objectParams = @constCast("L|352:192,1,NaN,0|0,1:0|1:0,1:0:0:0:"), // Not sure if i need to place 2 or if just 1 will do
+        //     .hit_sound = 8,
+        //     .object_params = @constCast("L|352:192,1,NaN,0|0,1:0|1:0,1:0:0:0:"), // Not sure if i need to place 2 or if just 1 will do
         // };
         //256,192,674,6,4,L|352:192,1,NaN | From Mew
         // Other taken from xavy
@@ -172,7 +181,7 @@ pub fn toBarline(hitobj_array: []HitObject) ![]sv.TimingPoint {
     for (0..hitobj_array.len) |i| {
         if ((hitobj_array[i].type & 0x1) != 1) continue; // Skip non-notes
 
-        if ((hitobj_array[i].hitSound & 0x1) == 1) { // NEED TO ALSO CHECK FOR FINISHER D
+        if ((hitobj_array[i].hit_sound & 0x1) == 1) { // NEED TO ALSO CHECK FOR FINISHER D
             // D
 
             // Place a barline on the note with "omit first barline" enabled

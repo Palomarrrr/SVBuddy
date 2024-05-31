@@ -188,7 +188,7 @@ pub const OsuFile = struct {
 
         // This feels cursed
         // TODO: this is fucked up redo it | little bit better but still fucked
-        _line: while (bytes_read >= 64) {
+        _line: while (bytes_read != 0) {
             var buffer = [_]u8{0} ** 64;
             var i_b: usize = 0;
             var f: usize = 0;
@@ -203,7 +203,7 @@ pub const OsuFile = struct {
                 if (i_b >= eol) break :_char; // We shouldnt be reading past the end
                 if (f == t) { // if the current field == the target
                     const found_time = try std.fmt.parseInt(i32, buffer[last_i_b..i_b], 10);
-                    //std.debug.print("Found point at `{}`\n", .{found_time});
+                    std.debug.print("Found point at `{}`\n", .{found_time});
                     //std.debug.print("\tBounds: `{}`->`{}`\n", .{ lower, upper });
                     if (lower <= found_time and found_time <= upper) {
                         if (!last_in_range) {
@@ -214,8 +214,8 @@ pub const OsuFile = struct {
                         retval[2] += 1;
                         //std.debug.print("Found point!\n", .{});
                     } else {
-                        //if (last_in_range or found_time > upper) {
-                        if (found_time > upper) { // This should be saying the same thing
+                        if (last_in_range or found_time > upper) {
+                            //if (found_time > upper) { // This should be saying the same thing
                             retval[1] = @intCast(try self.file.?.getPos() - bytes_read); // Set the cursor at the start of the line
                         } else {
                             retval[0] = @intCast(((try self.file.?.getPos() - bytes_read)) + eol); // Set the cursor at the end of the current line
@@ -233,32 +233,32 @@ pub const OsuFile = struct {
         if (retval[0] == 0) retval[0] = try self.findEndOfSectionOffset(self.section_offsets[m] + 1); // Same w/ start
 
         // DEBUG
-        //try self.file.?.seekTo(retval[0] - 3);
-        //std.debug.print("START:{}:", .{retval[0]});
-        //for (0..20) |_| {
-        //    var b = [_]u8{0};
-        //    _ = try self.file.?.read(&b);
-        //    if (b[0] > 32) {
-        //        std.debug.print("`{c}`,", .{b[0]});
-        //    } else {
-        //        std.debug.print("`_{}`,", .{b[0]});
-        //    }
-        //}
-        //std.debug.print("\n", .{});
+        try self.file.?.seekTo(retval[0] - 3);
+        std.debug.print("START:{}:", .{retval[0]});
+        for (0..20) |_| {
+            var b = [_]u8{0};
+            _ = try self.file.?.read(&b);
+            if (b[0] > 32) {
+                std.debug.print("{c}", .{b[0]});
+            } else {
+                std.debug.print("`_{}`", .{b[0]});
+            }
+        }
+        std.debug.print("\n", .{});
 
-        //try self.file.?.seekTo(retval[1] - 3);
-        //std.debug.print("END:{}:", .{retval[1]});
-        //for (0..20) |_| {
-        //    var b = [_]u8{0};
-        //    _ = try self.file.?.read(&b);
-        //    if (b[0] > 32) {
-        //        std.debug.print("`{c}`,", .{b[0]});
-        //    } else {
-        //        std.debug.print("`_{}`,", .{b[0]});
-        //    }
-        //}
-        //std.debug.print("\n", .{});
-        // DEBUG
+        try self.file.?.seekTo(retval[1] - 3);
+        std.debug.print("END:{}:", .{retval[1]});
+        for (0..20) |_| {
+            var b = [_]u8{0};
+            _ = try self.file.?.read(&b);
+            if (b[0] > 32) {
+                std.debug.print("{c}", .{b[0]});
+            } else {
+                std.debug.print("`_{}`", .{b[0]});
+            }
+        }
+        std.debug.print("\n", .{});
+        //DEBUG
 
         try self.file.?.seekTo(self.curr_offsets[m]); // Move the cursor back to where it was last
         return retval;
@@ -487,15 +487,16 @@ pub const OsuFile = struct {
         };
         var buffer = [_]u8{0} ** 64;
 
-        arr.* = if (size != 0) (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), size)) else return OsuObjErr.NoPointsGiven;
+        arr.* = if (size != 0) (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), size)) else return //OsuObjErr.NoPointsGiven;
 
+        std.debug.print("loadObjArr: OFFSET = {}\n", .{offset});
         try self.file.?.seekTo(offset);
 
         var bytes_read = buffer.len;
 
         _for: for (0..arr.*.len) |i| {
             bytes_read = try self.file.?.readAll(&buffer);
-            if (bytes_read <= 0) break :_for;
+            if (bytes_read == 0) break :_for;
 
             const eol = if (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{ '\r', '\n' })) |e| e else buffer.len - 2; // -2 to compensate to the + 2 later on
 

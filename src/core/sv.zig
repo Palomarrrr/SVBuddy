@@ -90,12 +90,13 @@ pub const TimingPoint = struct {
 //                      VOLUME TOOLS
 //**********************************************************
 
+// I LOVE CASTING AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 pub fn volumeLinear(sv_arr: []TimingPoint, vol_start: u8, vol_end: u8) !void {
-    var curr_vol = vol_start;
-    const vol_slope: u8 = ((vol_end - vol_start) / sv_arr.len); // FIXME: This will error. need to do like @trunc or some shit like that
+    var curr_vol: f32 = @floatFromInt(vol_start);
+    const vol_slope: f32 = @as(f32, @floatFromInt(vol_end - vol_start)) / @as(f32, @floatFromInt(sv_arr[sv_arr.len - 1].time - sv_arr[0].time));
     for (0..sv_arr.len) |i| {
-        sv_arr[i].volume = curr_vol;
-        curr_vol += vol_slope;
+        curr_vol = (vol_slope * @as(f32, @floatFromInt(sv_arr[i].time - sv_arr[0].time))) + @as(f32, @floatFromInt(vol_start));
+        sv_arr[i].volume = @as(u8, @truncate(@as(u32, @intFromFloat(@round(curr_vol)))));
     }
 }
 
@@ -231,13 +232,12 @@ pub inline fn getNumInherited(sv_arr: []TimingPoint) u32 {
 // linear increases/decreases | pass -1 to initial_bpm to turn off scale w/ bpm
 pub fn linear(sv_arr: []TimingPoint, sv_start: f32, sv_end: f32, initial_bpm: f32) !void {
     var curr_sv = sv_start;
-    const n_inh = getNumInherited(sv_arr);
-    const sv_slope: f32 = ((sv_end - sv_start) / @as(f32, @floatFromInt(n_inh)));
+    const sv_slope: f32 = ((sv_end - sv_start) / @as(f32, @floatFromInt(sv_arr[sv_arr.len - 1].time - sv_arr[0].time)));
     var next_bpm: f32 = initial_bpm;
     for (0..sv_arr.len) |i| {
         if (sv_arr[i].is_inh == 0) { // If point is inherited
+            curr_sv = (sv_slope * @as(f32, @floatFromInt(sv_arr[i].time - sv_arr[0].time))) + sv_start;
             sv_arr[i].value = -100.0 / svBpmAdjust(curr_sv, initial_bpm, next_bpm);
-            curr_sv += sv_slope;
         } else { // If point is uninherited
             if (initial_bpm > 0) { // If scale w/ bpm is on
                 next_bpm = 60000.0 / sv_arr[i].value; // collect the next BPM so we can adjust off of that
@@ -294,7 +294,7 @@ pub fn bezier(sv_arr: []TimingPoint, p1: *[2]f32, p2: *[2]f32, p3: *[2]f32, p4: 
     std.debug.print("\x1b[31mWARNING: This function is currently NOT WORKING AS INTENDED!!!\nThe outcome may have some invalid values!!!\x1b[0m\n", .{});
 
     for (0..sv_arr.len) |i| {
-        const t: f32 = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(sv_arr.len)); // Percentage of the way though the array since Bezier curves operate between 0 - 1
+        const t: f32 = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(sv_arr.len)); // Percentage of the way though the array since we want to scale w/ time
 
         // This should be a value between 0 -> 1
         const curr_x: f32 = ((math.pow(f32, (1 - t), 3)) * p1[0]) + ((3 * math.pow(f32, (1 - t), 2) * t) * p2[0]) + ((3 * (1 - t) * math.pow(f32, t, 2)) * p3[0]) + (math.pow(f32, t, 3) * p4[0]);

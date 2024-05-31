@@ -10,6 +10,7 @@ const timing = @import("../core/timing.zig");
 
 pub const BackendError = error{
     SectionConflict,
+    SectionDNE,
 };
 
 pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
@@ -27,11 +28,12 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         const val4: f32 = std.fmt.parseFloat(f32, params[6]) catch 0;
         _ = val4;
 
-        //std.debug.print("{}:{}:{d:.2}:{d:.2}:{}\n", .{ start, end, val1, val2, val3 });
+        //std.debug.print("RECIEVED FROM MAIN: {}:{}:{d:.2}:{d:.2}:{}\n", .{ start, end, val1, val2, val3 });
 
         const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
+        std.debug.print("\n\n", .{});
         const ext_hobj = try target.*.extentsOfSection(start, end, hobj.HitObject);
-        std.debug.print("Found section extents\n", .{});
+        //std.debug.print("Found section extents: {any} | {any}\n", .{ ext_tp, ext_hobj });
 
         const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
         std.debug.print("Found section bpm\n", .{});
@@ -47,20 +49,25 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         try createUndo(start, end, bck, false);
         // TESTING
 
-        if (params[0][1] != '4' and ext_tp[2] != 0) { // Janky fix to make sure that we aren't generating sv when adjusting an old section
+        //if (params[0][1] != '4' and ext_tp[2] != 0) { // Janky fix to make sure that we aren't generating sv when adjusting an old section
+        if (params[0][1] != '4' and params[0][1] != '5') { // Janky fix to make sure that we aren't generating sv when adjusting an old section
             var hobjs = try com.create(hobj.HitObject);
             defer std.heap.page_allocator.free(hobjs);
             const keep_prev: bool = !((params[9][0] & 0x4) == 1);
 
             std.debug.print("Creating objarrs\n", .{});
+            std.debug.print("a\n", .{});
             if (ext_hobj[2] == 0 or (params[9][0] & 0x1) == 0) { // If no hit objs
                 std.debug.print("Making new tpobjarr1: HOBJ = 0\n", .{});
                 try sv.createNewSVSection(&tp, null, start, end, 12, bpm[0], keep_prev); // TODO: ADD SNAPPING
             } else {
-                if (params[9][0] & 0x1 == 1) try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs); // Check if we even want to snap things to the notes
+                std.debug.print("b | {any}\n", .{ext_hobj});
+                //if (params[9][0] & 0x1 == 1) try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs); // Check if we even want to snap things to the notes
+                try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs); // TODO: Make sure this works the same (it should in theory)
                 std.debug.print("Making new tpobjarr1\n", .{});
                 try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm[0], keep_prev);
             }
+
             std.debug.print("made tpobjarr1\n", .{});
 
             if (ext_tp[2] != 0 and (params[9][0] & 0x4) == 0) { // If points existed previously | this is only important if we have uninherited timing points
@@ -100,6 +107,7 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
                 }
             }
         } else {
+            if (ext_tp[2] == 0) return BackendError.SectionDNE;
             _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tp);
             //try createUndo(ext_tp, tp, false); // TESTING
         }
@@ -111,6 +119,7 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             1 => try sv.exponential(tp, val1, val2, bpm[0]),
             2 => try sv.sinusoidal(tp, val1, val2, val3, bpm[0]),
             4 => try sv.scaleSection(tp, val1, val2, bpm[0]),
+            5 => try sv.volumeLinear(tp, @as(u8, @truncate(@as(u32, @intFromFloat(val1)))), @as(u8, @truncate(@as(u32, @intFromFloat(val2))))),
             else => unreachable,
         }
 
@@ -226,45 +235,58 @@ pub fn initTargetFile(params: anytype) !?*osufile.OsuFile {
 inline fn createUndo(start: i32, end: i32, cont: anytype, is_linked: bool) !void {
     const node: *undo.UndoNode = try std.heap.page_allocator.create(undo.UndoNode);
     try node.*.init(start, end, cont);
-    //std.debug.print("CREATEUNDO: Made node `[{any},{any},{?}]`\n", .{ node.*.extents, node.*.cont_t, node.*.linked });
-    std.debug.print("CREATEUNDO: Made node `[{any},{any},{?},{},{}]`\n", .{ node.*.extents, node.*.cont_t, node.*.linked, node.*.tp.len, node.*.hobj.len });
-    std.debug.print("GIVEN\n", .{});
-    for (cont) |t| std.debug.print("{s}\n", .{try t.toStr()});
-    std.debug.print("DONE\n", .{});
-
-    std.debug.print("PRINTING\n", .{});
-    for (node.*.tp) |t| std.debug.print("{s}\n", .{try t.toStr()});
-    std.debug.print("DONE\n", .{});
-
     if (is_linked) {
-        std.debug.print("CREATEUNDO: Node is linked\n", .{});
         const parent = undo.UNDO_HEAD orelse unreachable; // This fn shouldn't be called without a parent being made before it
         const last_link = parent.getLastLink(); // Get the last link in the chain
         last_link.*.linked = node;
-    } else undo.push(node);
+    } else undo.push(node, .undo);
 }
 
 // TODO: Test if this works
-pub fn undoLast(opt_targ: ?*osufile.OsuFile) !void {
+pub fn undoLast(opt_targ: ?*osufile.OsuFile, direction: undo.Direction) !void {
+    const opposite_dir: undo.Direction = switch (direction) {
+        .undo => .redo,
+        .redo => .undo,
+    };
     if (opt_targ) |target| {
-        if (undo.UNDO_HEAD) |_| {
-            var node = try undo.pop();
+        if ((if (direction == .undo) undo.UNDO_HEAD else undo.REDO_HEAD)) |_| { // Nightmare
+            var node = try undo.pop(direction);
+            const inverse_node = try std.heap.page_allocator.create(undo.UndoNode); // This node is going to the opposite stack
+            var cur_inv_node: *undo.UndoNode = inverse_node;
             while (true) {
-                std.debug.print("UNDOLAST: grabbed node `[{any},{any},{?},{},{}]`\n", .{ node.*.extents, node.*.cont_t, node.*.linked, node.*.tp.len, node.*.hobj.len });
                 switch (node.*.cont_t) {
                     .TimePoint => {
                         const exts = try target.*.extentsOfSection(node.*.extents[0], node.*.extents[1], sv.TimingPoint);
+
+                        var tp: []sv.TimingPoint = try com.create(sv.TimingPoint);
+                        //defer std.heap.page_allocator.free(sv.TimingPoint); // Wouldn't this leak?
+
+                        try target.loadObjArr(exts[0], exts[2], &tp);
+                        try cur_inv_node.*.init(node.*.extents[0], node.*.extents[1], tp);
+
                         try target.*.placeSection(exts[0], exts[1], node.*.tp);
                     },
                     .HitObj => {
                         const exts = try target.*.extentsOfSection(node.*.extents[0], node.*.extents[1], hobj.HitObject);
+
+                        // Capture what is currently there
+                        var hobjs: []hobj.HitObject = try com.create(hobj.HitObject);
+                        //defer std.heap.page_allocator.free(hobj.HitObject);
+
+                        try target.loadObjArr(exts[0], exts[2], &hobjs);
+                        try cur_inv_node.*.init(node.*.extents[0], node.*.extents[1], hobjs);
+
                         try target.*.placeSection(exts[0], exts[1], node.*.hobj);
                     },
                 }
-                node = node.*.linked orelse break;
-                std.debug.print("UNDOLAST: Linked undo found!\n", .{});
+                if (node.*.linked) |link| { // If there is a linked node
+                    node = link; // Advance the node ptr
+                    cur_inv_node.*.linked = try std.heap.page_allocator.create(undo.UndoNode); // And make sure to create a matching redo node
+                    cur_inv_node = cur_inv_node.*.linked orelse unreachable; // This was literally just fucking declared... please
+                } else break;
             }
-            std.debug.print("UNDOLAST: End\n", .{});
+            std.debug.print("Pushing node in the {any} direction!\n", .{opposite_dir});
+            undo.push(inverse_node, opposite_dir);
         } else return undo.UndoError.EndOfStack;
     } else return osufile.OsuFileIOError.FileDNE;
 }

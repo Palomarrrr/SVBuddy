@@ -46,7 +46,11 @@ var CURR_FILE_LABEL: ?*capy.Label = null;
 
 fn undoButton(btn: *capy.Button) anyerror!void {
     _ = btn;
-    try wrapper.undoLast(CURR_FILE);
+    try wrapper.undoLast(CURR_FILE, .undo);
+}
+fn redoButton(btn: *capy.Button) anyerror!void {
+    _ = btn;
+    try wrapper.undoLast(CURR_FILE, .redo);
 }
 
 fn buttonClick(btn: *capy.Button) anyerror!void {
@@ -77,12 +81,10 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
                 }
                 flag <<= 1;
             }
-
-            std.debug.print("OPTIONS: {b}\n", .{OPTION_FLAG}); //DBG
         },
         1 => {
             switch (parent_name[1] - '0') {
-                0, 1, 4 => max = 8,
+                0, 1, 4, 5 => max = 8,
                 2 => max = 10,
                 3 => max = 12,
                 else => unreachable,
@@ -127,12 +129,11 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         },
         1 => {
             switch (parent_name[1] - '0') {
-                0...4 => try wrapper.applySVFn(CURR_FILE, params),
+                0...5 => try wrapper.applySVFn(CURR_FILE, params),
                 else => unreachable,
             }
         },
         2 => {
-            std.debug.print("C\n", .{});
             switch (parent_name[1] - '0') {
                 0...2 => try wrapper.applyHObjFn(CURR_FILE, params),
                 else => unreachable,
@@ -228,6 +229,18 @@ pub fn main() !void {
         capy.textField(.{}),
     });
 
+    const cont_lin_vol = try capy.column(.{ .name = "15" }, .{
+        capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
+        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+        capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "Start Volume" }),
+        capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "End Volume" }),
+        capy.textField(.{}),
+    });
+
     //***************************************************
     //  HIT OBJECTS
     //***************************************************
@@ -312,8 +325,12 @@ pub fn main() !void {
     //***************************************************
 
     CURR_FILE_LABEL = capy.label(.{ .alignment = .Left, .text = "No file selected..." });
-    const header_bar = capy.row(.{ .name = "z" }, .{
+    const header_bar = capy.row(.{ .name = "z", .expand = .No, .spacing = 5 }, .{
         CURR_FILE_LABEL orelse unreachable,
+        capy.alignment(
+            .{ .x = 1, .y = 0.5 },
+            capy.button(.{ .label = "Redo", .onclick = @ptrCast(&redoButton) }),
+        ),
         capy.alignment(
             .{ .x = 1, .y = 0.5 },
             capy.button(.{ .label = "Undo", .onclick = @ptrCast(&undoButton) }),
@@ -325,6 +342,7 @@ pub fn main() !void {
     const tab_sin = capy.tab(.{ .label = "Sine" }, cont_sin);
     const tab_bez = capy.tab(.{ .label = "Bezier" }, cont_bez);
     const tab_adj = capy.tab(.{ .label = "Adjustments" }, cont_adj);
+    const tab_lin_vol = capy.tab(.{ .label = "Linear Volume" }, cont_lin_vol);
 
     const tab_snap = capy.tab(.{ .label = "Auto-snap" }, cont_snap_to);
     const tab_to_bar = capy.tab(.{ .label = "Note to barline" }, cont_to_barline);
@@ -332,7 +350,7 @@ pub fn main() !void {
 
     const tab_static_rand_bl = capy.tab(.{ .label = "Random barline" }, cont_static_rand_barline);
 
-    const tab_cont_sv = capy.tabs(.{ tab_lin, tab_exp, tab_sin, tab_bez, tab_adj });
+    const tab_cont_sv = capy.tabs(.{ tab_lin, tab_exp, tab_sin, tab_bez, tab_adj, tab_lin_vol });
     const tab_cont_hobj = capy.tabs(.{ tab_snap, tab_to_bar, tab_to_unhit });
     const tab_cont_barlines = capy.tabs(.{tab_static_rand_bl});
 
@@ -346,7 +364,7 @@ pub fn main() !void {
     var main_cont: *capy.Container = undefined;
     switch (builtin.os.tag) {
         .linux => {
-            const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/Zig/SVUI/test_files/svbuddy.png", .scaling = .Fit });
+            const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/Zig/SVUI/test_files/svbuddy.png", .scaling = .Fit }); // TODO: HOW THE FUCK DO I GET THIS TO JUST READ A RELATIVE PATH FML!!!!!!!!
             main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
                 //CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
                 header_bar,
