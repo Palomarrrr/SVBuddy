@@ -7,6 +7,7 @@ const bl = @import("../core/barline.zig");
 const hobj = @import("../core/hitobj.zig");
 const osufile = @import("../core/osufileio.zig");
 const timing = @import("../core/timing.zig");
+const pread = @import("./proc_read.zig");
 
 pub const BackendError = error{
     SectionConflict,
@@ -222,6 +223,7 @@ pub fn applyBarlineFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 }
 
 pub fn initTargetFile(params: anytype) !?*osufile.OsuFile {
+    std.debug.print("inittfile\n{s}\n", .{params[1]});
     const retval: *osufile.OsuFile = try std.heap.page_allocator.create(osufile.OsuFile);
     try retval.*.init(params[1]);
     if (params[9][0] & 0x40 != 0) {
@@ -289,4 +291,8 @@ pub fn undoLast(opt_targ: ?*osufile.OsuFile, direction: undo.Direction) !void {
             undo.push(inverse_node, opposite_dir);
         } else return undo.UndoError.EndOfStack;
     } else return osufile.OsuFileIOError.FileDNE;
+}
+
+pub fn preadTest(preader: *pread.UnixProcReader) ![]u8 {
+    return try preader.*.toStr();
 }

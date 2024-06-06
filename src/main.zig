@@ -9,6 +9,7 @@ const builtin = @import("builtin");
 //TMP
 const sv = @import("./core/sv.zig");
 const hobj = @import("./core/hitobj.zig");
+const pread = @import("./util/proc_read.zig");
 
 //=============================================
 // TODO
@@ -43,14 +44,69 @@ pub usingnamespace capy.cross_platform;
 var CURR_FILE: ?*osufile.OsuFile = null;
 var OPTION_FLAG: u8 = 0;
 var CURR_FILE_LABEL: ?*capy.Label = null;
+var PREADER: pread.UnixProcReader = undefined;
+const SETTINGS_LOCATIONS = [_]usize{ 5, 6, 7, 8, 9, 10, 12 }; // Edit this when adding more boolean vars
 
 fn undoButton(btn: *capy.Button) anyerror!void {
     _ = btn;
     try wrapper.undoLast(CURR_FILE, .undo);
 }
+
 fn redoButton(btn: *capy.Button) anyerror!void {
     _ = btn;
     try wrapper.undoLast(CURR_FILE, .redo);
+}
+
+fn preaderBtn(btn: *capy.Button) anyerror!void {
+    defer PREADER.deinit(); //test
+
+    const parent_wgt = btn.*.getParent().?.as(capy.Container);
+    var params = [_][]u8{undefined} ** 10;
+    params[9] = try std.heap.page_allocator.alloc(u8, 1);
+    defer for (0..10) |k| std.heap.page_allocator.free(params[k]);
+
+    const tmp = try wrapper.preadTest(&PREADER);
+    defer std.heap.page_allocator.free(tmp);
+
+    var flag: u8 = 0x1;
+    for (SETTINGS_LOCATIONS) |l| {
+        if (((try parent_wgt.*.getChildAt(l)).as(capy.CheckBox).*.checked.get())) OPTION_FLAG |= flag; // Nightmare fuel
+        flag <<= 1;
+    }
+
+    // ...
+    // I
+    // LOVE
+    // WCHARS
+
+    var strlen: usize = 0;
+    for (tmp) |c| {
+        switch (c) {
+            0 => continue,
+            else => strlen += 1,
+        }
+    }
+    params[1] = try std.heap.page_allocator.alloc(u8, strlen);
+    var i: usize = 0;
+    for (tmp) |c| {
+        switch (c) {
+            0 => continue,
+            else => {
+                params[1][i] = c;
+                i += 1;
+            },
+        }
+    }
+
+    // That should fix the wchar problem
+    // ... fuck you bill
+
+    CURR_FILE = try wrapper.initTargetFile(params);
+
+    if (CURR_FILE) |fp| {
+        // This most likely leaks memory... I can't find a way to fix it...
+        CURR_FILE_LABEL.?.*.text.set(try std.fmt.allocPrintZ(std.heap.page_allocator, "Editing: {s} - {s} | [{s}]", .{ fp.metadata.artist, fp.metadata.title, fp.metadata.version }));
+    }
 }
 
 fn buttonClick(btn: *capy.Button) anyerror!void {
@@ -71,11 +127,10 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
     switch (parent_name[0] - '0') {
         0 => {
             max = 2;
-            const locations = [_]usize{ 4, 5, 6, 7, 8, 9, 11 }; // Edit this when adding more boolean vars
 
             // TODO: Test this shit
             var flag: u8 = 0x1;
-            for (locations) |l| {
+            for (SETTINGS_LOCATIONS) |l| {
                 if (((try parent_wgt.*.getChildAt(l)).as(capy.CheckBox).*.checked.get())) {
                     OPTION_FLAG |= flag; // Nightmare fuel
                 }
@@ -308,6 +363,11 @@ pub fn main() !void {
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
         capy.label(.{ .alignment = .Left, .text = "osu! Song directory path" }),
         capy.textField(.{}),
+
+        // TEST
+        capy.button(.{ .label = "Detect (this may take some time)", .onclick = @ptrCast(&preaderBtn) }),
+        // TEST
+
         capy.label(.{ .alignment = .Left, .text = "SV Settings" }),
         capy.checkBox(.{ .label = "Snap SV to notes", .checked = true }),
         capy.checkBox(.{ .label = "Normalize SV over BPM changes", .checked = true }),
@@ -327,14 +387,11 @@ pub fn main() !void {
     CURR_FILE_LABEL = capy.label(.{ .alignment = .Left, .text = "No file selected..." });
     const header_bar = capy.row(.{ .name = "z", .expand = .No, .spacing = 5 }, .{
         CURR_FILE_LABEL orelse unreachable,
-        capy.alignment(
-            .{ .x = 1, .y = 0.5 },
-            capy.button(.{ .label = "Redo", .onclick = @ptrCast(&redoButton) }),
-        ),
-        capy.alignment(
-            .{ .x = 1, .y = 0.5 },
-            capy.button(.{ .label = "Undo", .onclick = @ptrCast(&undoButton) }),
-        ),
+    });
+
+    const global_opt_bar = capy.row(.{ .name = "y", .expand = .No, .spacing = 5 }, .{
+        capy.button(.{ .label = "Redo", .onclick = @ptrCast(&redoButton) }),
+        capy.button(.{ .label = "Undo", .onclick = @ptrCast(&undoButton) }),
     });
 
     const tab_lin = capy.tab(.{ .label = "Linear" }, cont_lin);
@@ -364,11 +421,12 @@ pub fn main() !void {
     var main_cont: *capy.Container = undefined;
     switch (builtin.os.tag) {
         .linux => {
-            const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/Zig/SVUI/test_files/svbuddy.png", .scaling = .Fit }); // TODO: HOW THE FUCK DO I GET THIS TO JUST READ A RELATIVE PATH FML!!!!!!!!
+            const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/Zig/SVBUDDY/test_files/svbuddy.png", .scaling = .Fit }); // TODO: HOW THE FUCK DO I GET THIS TO JUST READ A RELATIVE PATH FML!!!!!!!!
             main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
                 //CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
                 header_bar,
                 TEST_IMG,
+                global_opt_bar,
                 main_tab_cont,
             });
         },
@@ -376,6 +434,7 @@ pub fn main() !void {
             main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
                 //CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
                 header_bar,
+                global_opt_bar,
                 main_tab_cont,
             });
         },

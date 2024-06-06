@@ -43,11 +43,13 @@ pub const OsuFile = struct {
 
     // Basically a constructor
     // TODO: MAKE THIS CROSS PLATFORM | REPLACE ALL '/' WITH SOME DYNAMIC SHIT
-    pub fn init(self: *OsuFile, path: []const u8) !void {
+    pub fn init(self: *OsuFile, path: []u8) !void {
+        std.debug.print("PATH: {s}\n", .{path});
         if (std.ascii.eqlIgnoreCase(path, "NONE")) return OsuFileIOError.FileDNE;
 
         self.path = try std.heap.page_allocator.alloc(u8, path.len);
         @memcpy(self.path, path);
+        std.debug.print("SPATH: {s}\n", .{self.path});
 
         self.file = fs.openFileAbsolute(self.path, .{ .mode = .read_write }) catch {
             return OsuFileIOError.NoPathGiven;
