@@ -192,8 +192,10 @@ pub fn applyBarlineFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 
         const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
 
-        const bck = try com.create(sv.TimingPoint);
+        var bck = try com.create(sv.TimingPoint);
+        //std.debug.print("Here | {any}\n", .{@TypeOf(&bck)});
         _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &bck);
+        //std.debug.print("out\n", .{});
         try createUndo(start, end, bck, false); // TESTING
 
         const tps = try com.create(sv.TimingPoint);
@@ -201,18 +203,21 @@ pub fn applyBarlineFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 
         if (ext_tp[2] != 0) return BackendError.SectionConflict;
 
-        std.debug.print("exts: {}=>{}\n", .{ ext_tp[0], ext_tp[1] });
+        //std.debug.print("exts: {}=>{}\n", .{ ext_tp[0], ext_tp[1] });
         const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
-        std.debug.print("bpm: {d:.2}\n", .{bpm[0]});
+        //std.debug.print("bpm: {d:.2}\n", .{bpm[0]});
         var tp_out: ?[]sv.TimingPoint = null; // Prolly doesnt need to be opt
 
         switch (params[0][1] - '0') {
             0 => {
                 const chance: u8 = @as(u8, @intFromFloat(val3));
-                std.debug.print("chance: {}\n", .{chance});
+                //std.debug.print("chance: {}\n", .{chance});
                 tp_out = try bl.staticRandomBarlines(bpm[0], start, end, chance, val1, val2);
             },
-            //1 => ,
+            1 => {
+                const res: u8 = @as(u8, @intFromFloat(val3));
+                tp_out = try bl.linear60kBarline(bpm[0], start, end, val1, val2, 1920, res);
+            },
             //2 => ,
             else => unreachable,
         }
@@ -293,6 +298,6 @@ pub fn undoLast(opt_targ: ?*osufile.OsuFile, direction: undo.Direction) !void {
     } else return osufile.OsuFileIOError.FileDNE;
 }
 
-pub fn preadTest(preader: *pread.UnixProcReader) ![]u8 {
+pub fn preadTest(preader: *pread.ProcReader) ![]u8 {
     return try preader.*.toStr();
 }

@@ -1,4 +1,4 @@
-// MASSIVE THANKS to gosumemory and cosutrainer!
+// MASSIVE THANKS TO gosumemory AND cosutrainer FOR EXAMPLES ON READING OSU PROCESS DATA!!!
 
 // NOTES TO SELF: This should be a child process that is spun off on request from the parent program.
 //                It should write whatever the current map is to /tmp/svbuddy.pipe
@@ -9,27 +9,37 @@
 //  - OPTIMIZE THIS NIGHTMARE....
 //  - uhhh make it just less of a scrapped together mess
 
+//  KNOWN BUGS:
+//  - CURRENTLY CRASHES IF I TRY TO LOOK AT MY (5_5) MAP OF `lovely freezing tomboy bath - (-273.15`C)`
+//      * Something about an integer overflow when doing shit w/ metadata
+//  - THIS GETS FUCKED UP WHEN THERE ARE NON-ENGLISH CHARS IN THE PATH
+//      * `Dedaramazing 300`, `Priton`, `Bakuhatsu Maximizer` are a few examples
+//          * This shouldnt happen when downloading from the website but it happens on local files
+
 const std = @import("std");
 const builtin = @import("builtin");
+const REG_T = std.os.windows.REG;
+const win = std.os.windows;
 
-pub const OSU_STATUS_SIG = [_]u8{ 0x48, 0x83, 0xF8, 0x04, 0x73, 0x1E }; // Dont know if this is actually useful
+pub const OSU_STATUS_SIG = [_]u8{ 0x48, 0x83, 0xF8, 0x04, 0x73, 0x1E }; // This isn't really used and i dont think its that useful actually
 pub const OSU_BASE_SIG = [_]u8{ 0xF8, 0x01, 0x74, 0x04, 0x83, 0x65 };
 
 pub const ProcReadErr = error{
     EndOfMapFile,
     PatternNotFound,
     OsuProcDNE,
+    OsuFailedToReadReg,
 };
 
-// TODO: Need to make a seperate Windows proc reader prolly
-// You could try to do some comptime fuckery to compress this into one class
-pub const UnixProcReader = struct {
+pub const ProcReader = struct {
+    // TODO: Make this switch between linux and windows proc readers during comptime
     proc_dir: []u8,
     osu_dir: []u8,
     mem_file: std.fs.File,
     map_file: std.fs.File,
+    beatmap_base: u32 = 0,
 
-    pub fn findOsuProc(self: *UnixProcReader) !void {
+    pub fn findOsuProc(self: *ProcReader) !void {
         var proc = try std.fs.openDirAbsolute("/proc/", .{ .iterate = true });
         defer proc.close();
         var proc_itr = proc.iterate();
@@ -61,7 +71,7 @@ pub const UnixProcReader = struct {
                 const cmdline_file = try std.fs.openFileAbsolute(cmdline_path, .{});
                 defer cmdline_file.close();
 
-                //var cmdline_cont = try std.heap.page_allocator.alloc(u8, try cmdline_file.getEndPos()); // TODO: this could be unsafe but I don't think its too big of a deal?
+                //var cmdline_cont = try std.heap.page_allocator.alloc(u8, try cmdline_file.getEndPos()); // FIXME: Possibly unsafe?
                 // aww shit here we go again... ^ doesnt work... so fml i gotta do this the shitty way
                 var cont_len: usize = 0;
                 // Try to count up all the lines
@@ -91,28 +101,35 @@ pub const UnixProcReader = struct {
         }
     }
 
-    pub inline fn memReadInit(self: *UnixProcReader) !void {
+    pub fn deinit(self: *ProcReader) void {
+        //self.memReadDeinit();
+        //self.mapReadDeinit();
+        std.heap.page_allocator.free(self.osu_dir);
+        std.heap.page_allocator.free(self.proc_dir);
+    }
+
+    pub inline fn memReadInit(self: *ProcReader) !void {
         self.mem_file = try std.fs.openFileAbsolute(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ self.proc_dir, @constCast("/mem") }), .{});
     }
 
-    pub inline fn memReadDeinit(self: *UnixProcReader) void {
+    pub inline fn memReadDeinit(self: *ProcReader) void {
         self.mem_file.close();
     }
 
-    pub fn memRead(self: *UnixProcReader, base: usize, buffer: *[]u8) !void {
+    pub fn memRead(self: *ProcReader, base: usize, buffer: *[]u8) !void {
         try self.mem_file.seekTo(base);
         _ = try self.mem_file.readAll(buffer.*);
     }
 
-    pub inline fn mapReadInit(self: *UnixProcReader) !void {
+    pub inline fn mapReadInit(self: *ProcReader) !void {
         self.map_file = try std.fs.openFileAbsolute(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ self.proc_dir, @constCast("/maps") }), .{});
     }
 
-    pub inline fn mapReadDeinit(self: *UnixProcReader) void {
+    pub inline fn mapReadDeinit(self: *ProcReader) void {
         self.map_file.close();
     }
 
-    pub fn getNextMapReg(self: *UnixProcReader) ![2]u32 { // Returns []u32{start, len}
+    pub fn getNextMapReg(self: *ProcReader) ![2]u32 { // Returns []u32{start, len}
         var line = [_]u8{0} ** 512;
         var exts = [_]u32{ 0, 0 };
         var idx = [_]u32{ 0, 0 }; // location of '-', location of ' '
@@ -133,7 +150,6 @@ pub const UnixProcReader = struct {
             var e: usize = 0;
 
             // Find special chars
-            // while i < 2
             inner: while (true) : (j += 1) {
                 switch (line[j]) {
                     '-', ' ' => {
@@ -164,7 +180,7 @@ pub const UnixProcReader = struct {
         return exts;
     }
 
-    pub fn memFindPat(self: *UnixProcReader, needle: []u8) !u32 { // Removed masks because i don't think im going to use it
+    pub fn memFindPat(self: *ProcReader, needle: []u8) !u32 { // Removed masks because i don't think im going to use it
 
         // This causes errors and has to be done manually now
         //try self.mapReadInit();
@@ -197,7 +213,7 @@ pub const UnixProcReader = struct {
         return ProcReadErr.PatternNotFound;
     }
 
-    fn getBeatmapPtr(self: *UnixProcReader, base: usize) !u32 {
+    fn getBeatmapPtr(self: *ProcReader, base: usize) !u32 {
         var new_base: u32 = 0;
         //var buf = [_]u8{ 0, 0, 0, 0 }; // I AM GOING TO KILL MY SELF
         var buf = try std.heap.page_allocator.alloc(u8, 4);
@@ -212,7 +228,7 @@ pub const UnixProcReader = struct {
         return castToU32(&buf);
     }
 
-    pub fn getBeatmapPath(self: *UnixProcReader, base: usize) ![]u8 {
+    pub fn getBeatmapPath(self: *ProcReader, base: usize) ![]u8 {
         const bm_ptr = try self.getBeatmapPtr(base);
         std.debug.print("LOG: Loaded beatmap ptr: {}\n", .{bm_ptr});
         //var buf = [_]u8{ 0, 0, 0, 0 };
@@ -242,36 +258,99 @@ pub const UnixProcReader = struct {
         return try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ dir_str, @constCast("/"), path_str });
     }
 
-    pub fn deinit(self: *UnixProcReader) void {
-        //self.memReadDeinit();
-        //self.mapReadDeinit();
-        std.heap.page_allocator.free(self.osu_dir);
-        std.heap.page_allocator.free(self.proc_dir);
-    }
-
-    pub fn toStr(self: *UnixProcReader) ![]u8 { // Just a test fn
-        var base: usize = 0;
-        std.debug.print("LOG: Attempting to find proc dir...\n", .{});
-        try self.findOsuProc(); // find the process
-        std.debug.print("LOG: Found osu proc dir: {s}\n", .{self.*.proc_dir});
-        std.debug.print("LOG: Found osu real dir: {s}\n", .{self.*.osu_dir});
+    pub fn toStr(self: *ProcReader) ![]u8 { // Just a test fn
+        if (self.*.beatmap_base == 0) { // Not needed if we already have the base |
+            std.debug.print("LOG: FIRST RUN | Attempting to find proc dir...\n", .{});
+            try self.findOsuProc(); // Find the process
+            std.debug.print("LOG: Found osu proc dir: {s}\n", .{self.*.proc_dir});
+            std.debug.print("LOG: Found osu real dir: {s}\n", .{self.*.osu_dir});
+        } else std.debug.print("LOG: RAN PREVIOUSLY: Proc dir and real dir already found", .{});
         std.debug.print("LOG: Attempting to scan mem...\n", .{});
-        try self.mapReadInit(); // This needs to be done manually rn
-        if (base == 0) {
-            base = try self.*.memFindPat(@constCast(&OSU_BASE_SIG));
+
+        // This needs to be done manually rn
+        try self.mapReadInit();
+        defer self.mapReadDeinit();
+
+        // This speeds things up greatly
+        if (self.*.beatmap_base == 0) {
+            self.*.beatmap_base = try self.*.memFindPat(@constCast(&OSU_BASE_SIG)); // Find beatmap base
+            std.debug.print("LOG: Found base addr: {}\n", .{self.*.beatmap_base});
         }
-        std.debug.print("LOG: Found base addr: {}\n", .{base});
-        var map_path: []u8 = undefined; // FUCK YOUUU
-        map_path = try self.getBeatmapPath(base);
-        defer std.heap.page_allocator.free(map_path); // ERR?
+
+        const map_path = try self.getBeatmapPath(self.*.beatmap_base);
+        defer std.heap.page_allocator.free(map_path);
 
         std.debug.print("Got beatmap path of: {s}Songs/{s}\n", .{ self.osu_dir, map_path });
 
         const ret = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ self.osu_dir, @constCast("Songs/"), map_path });
-        defer self.mapReadDeinit();
         return ret;
     }
 };
+
+//   .windows => {
+//       // This shit is basically a fuckin port from cosutrainer... I have zero clue how windows works and this makes me want to super die
+//       struct {
+//           osu_dir: []win.LPWSTR,
+//           mem_file: std.fs.File,
+//           map_file: std.fs.File,
+//
+//           pub fn deinit(self: *ProcReader) void {
+//               _ = self;
+//               //
+//           }
+//
+//           pub fn findOsuProc(self: *ProcReader) !void {
+//               _ = self;
+//
+//               var size: REG_T.DWORD = 0;
+//               // I dont know if these auto cast???
+//               const lp_sub_key = []win.WCHAR{ 'o', 's', 'u', '\\', 's', 'h', 'e', 'l', 'l', '\\', 'o', 'p', 'e', 'n', '\\', 'c', 'o', 'm', 'm', 'a', 'n', 'd' }; // Im killing myself
+//               const empty = []win.WCHAR{0};
+//               var ret: win.LSTATUS = try win.advapi32.RegGetValueW(win.HKEY_CLASSES_ROOT, lp_sub_key, empty, win.advapi32.RRF.RT_REG_SZ, null, null, &size);
+//               if (ret != 0) {
+//                   return ProcReadErr.OsuProcDNE;
+//               }
+//               const path = std.heap.page_allocator.alloc(win.WCHAR, size);
+//               ret = try win.advapi32.RegGetValueW(win.HKEY_CLASSES_ROOT, lp_sub_key, empty, win.advapi32.RRF.RT_REG_SZ, null, path, &size);
+//               if (ret != 0) {
+//                   return ProcReadErr.OsuFailedToReadReg;
+//               }
+//           }
+//
+//           pub fn memReadInit(self: *ProcReader) !void {
+//               _ = self;
+//           }
+//
+//           pub fn memReadDeinit(self: *ProcReader) void {
+//               _ = self;
+//           }
+//
+//           pub fn mapReadInit(self: *ProcReader) !void {
+//               _ = self;
+//           }
+//
+//           pub fn mapReadDeinit(self: *ProcReader) void {
+//               _ = self;
+//           }
+//
+//           pub fn memRead(self: *ProcReader, base: usize, buffer: *[]u8) !void {
+//               _ = self;
+//               _ = base;
+//               _ = buffer;
+//               //
+//           }
+//
+//           pub fn memFindPat(self: *ProcReader, needle: []u8) ![2]u32 {
+//               _ = self;
+//               _ = needle;
+//           }
+//
+//           pub fn toStr(self: *ProcReader) ![]u8 { // Just a test fn
+//               _ = self;
+//               //
+//           }
+//       };
+//   },
 
 // Small local helper fn to cast a 4 byte array to a single u32 | I think I could probably accomplish the same thing with `@bitCast()` ?
 inline fn castToU32(in: *[]u8) u32 {
@@ -285,4 +364,8 @@ inline fn castToU32(in: *[]u8) u32 {
     out |= (in.*[0]);
     @memset(in.*, 0);
     return out;
+}
+
+inline fn u16ArrToU8Arr(in: *[]u8) []u8 {
+    return in.*; //tmp
 }

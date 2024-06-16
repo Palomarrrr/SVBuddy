@@ -485,7 +485,10 @@ pub const OsuFile = struct {
     pub fn loadObjArr(self: *OsuFile, offset: usize, size: usize, arr: anytype) !void {
         _ = switch (@TypeOf(arr)) {
             *[]sv.TimingPoint, *[]hitobj.HitObject => 0,
-            else => unreachable,
+            else => {
+                std.debug.print("ERROR: Was given unexpected type `{any}`\n", .{@TypeOf(arr)});
+                unreachable;
+            },
         };
         var buffer = [_]u8{0} ** 64;
 

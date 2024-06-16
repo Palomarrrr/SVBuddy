@@ -44,7 +44,7 @@ pub usingnamespace capy.cross_platform;
 var CURR_FILE: ?*osufile.OsuFile = null;
 var OPTION_FLAG: u8 = 0;
 var CURR_FILE_LABEL: ?*capy.Label = null;
-var PREADER: pread.UnixProcReader = undefined;
+var PREADER: pread.ProcReader = undefined;
 const SETTINGS_LOCATIONS = [_]usize{ 5, 6, 7, 8, 9, 10, 12 }; // Edit this when adding more boolean vars
 
 fn undoButton(btn: *capy.Button) anyerror!void {
@@ -58,15 +58,15 @@ fn redoButton(btn: *capy.Button) anyerror!void {
 }
 
 fn preaderBtn(btn: *capy.Button) anyerror!void {
-    defer PREADER.deinit(); //test
-
+    //defer PREADER.deinit(); //test
     const parent_wgt = btn.*.getParent().?.as(capy.Container);
     var params = [_][]u8{undefined} ** 10;
     params[9] = try std.heap.page_allocator.alloc(u8, 1);
     defer for (0..10) |k| std.heap.page_allocator.free(params[k]);
 
-    const tmp = try wrapper.preadTest(&PREADER);
-    defer std.heap.page_allocator.free(tmp);
+    //const tmp = try wrapper.preadTest(&PREADER); // THIS IS STUPID AND NOT NEEDED
+    const beatmap = try PREADER.toStr();
+    defer std.heap.page_allocator.free(beatmap);
 
     var flag: u8 = 0x1;
     for (SETTINGS_LOCATIONS) |l| {
@@ -80,7 +80,7 @@ fn preaderBtn(btn: *capy.Button) anyerror!void {
     // WCHARS
 
     var strlen: usize = 0;
-    for (tmp) |c| {
+    for (beatmap) |c| {
         switch (c) {
             0 => continue,
             else => strlen += 1,
@@ -88,7 +88,7 @@ fn preaderBtn(btn: *capy.Button) anyerror!void {
     }
     params[1] = try std.heap.page_allocator.alloc(u8, strlen);
     var i: usize = 0;
-    for (tmp) |c| {
+    for (beatmap) |c| {
         switch (c) {
             0 => continue,
             else => {
@@ -101,6 +101,7 @@ fn preaderBtn(btn: *capy.Button) anyerror!void {
     // That should fix the wchar problem
     // ... fuck you bill
 
+    // Call this to init the target
     CURR_FILE = try wrapper.initTargetFile(params);
 
     if (CURR_FILE) |fp| {
@@ -139,22 +140,21 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         },
         1 => {
             switch (parent_name[1] - '0') {
-                0, 1, 4, 5 => max = 8,
-                2 => max = 10,
-                3 => max = 12,
+                0, 1, 4, 5 => max = 4,
+                2 => max = 6,
+                3 => max = 6,
                 else => unreachable,
             }
         },
         2 => {
             switch (parent_name[1] - '0') {
-                0, 2 => max = 6,
-                1 => max = 8,
+                0, 1, 2 => max = 4,
                 else => unreachable,
             }
         },
         3 => {
             switch (parent_name[1] - '0') {
-                0 => max = 10,
+                0, 1 => max = 6,
                 else => unreachable,
             }
         },
@@ -166,13 +166,48 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
 
     params[9][0] = OPTION_FLAG; // This should always be the last param
 
+    // This is awful and slow
     while (i <= max) : (i += 2) {
-        const text_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.TextField);
-        const text_out = text_wgt.*.text.get();
-        params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
-        @memcpy(params[p], text_out);
-        p += 1;
+        //std.debug.print("i={},{}\n", .{ i, max });
+        if ((try parent_wgt.*.getChildAt(i)).is(capy.Container)) {
+            //std.debug.print("a\n", .{});
+            const row_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.Container);
+            for (0..(row_wgt.widget.?.name.get() orelse unreachable).len) |j| {
+                //std.debug.print("#{}\n", .{j});
+                const text_out = switch ((row_wgt.*.widget.?.name.get() orelse unreachable)[j]) {
+                    'T' => (try row_wgt.*.getChildAt(j)).as(capy.TextField).*.text.get(),
+                    'C' => if ((try row_wgt.*.getChildAt(j)).as(capy.CheckBox).*.checked.get()) @constCast("1") else @constCast("0"),
+                    else => unreachable,
+                };
+                //const text_out = text_wgt.*.text.get();
+                params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
+                @memcpy(params[p], text_out);
+                p += 1;
+            }
+        } else if ((try parent_wgt.*.getChildAt(i)).is(capy.CheckBox)) {
+            //std.debug.print("b\n", .{});
+            const cb_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.CheckBox);
+            const text_out = if (cb_wgt.*.checked.get()) @constCast("1") else @constCast("0"); // Hopefully this works??
+            params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
+            @memcpy(params[p], text_out);
+            p += 1;
+        } else {
+            //std.debug.print("c\n", .{});
+            const text_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.TextField);
+            const text_out = text_wgt.*.text.get();
+            params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
+            @memcpy(params[p], text_out);
+            p += 1;
+        }
     }
+    // Previous implementation
+    //while(i <= max) : (i += 2) {
+    //const text_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.TextField);
+    //const text_out = text_wgt.*.text.get();
+    //params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
+    //@memcpy(params[p], text_out);
+    //p += 1;
+    //}
 
     switch (parent_name[0] - '0') {
         0 => {
@@ -196,7 +231,7 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         },
         3 => {
             switch (parent_name[1] - '0') {
-                0 => try wrapper.applyBarlineFn(CURR_FILE, params),
+                0, 1 => try wrapper.applyBarlineFn(CURR_FILE, params),
                 else => unreachable,
             }
         },
@@ -212,14 +247,30 @@ pub fn main() !void {
 
     const cont_lin = try capy.column(.{ .name = "10" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Start Value" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Value" }),
-        capy.textField(.{}),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{ // the name field is just going to be used as a label for what is in the section
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{ // the name field is just going to be used as a label for what is in the section
+            capy.label(.{ .alignment = .Left, .text = "Start Value" }),
+            capy.label(.{ .alignment = .Left, .text = "End Value" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        //capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+        //capy.textField(.{}),
+        //capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        //capy.textField(.{}),
+        //capy.label(.{ .alignment = .Left, .text = "Start Value" }),
+        //capy.textField(.{}),
+        //capy.label(.{ .alignment = .Left, .text = "End Value" }),
+        //capy.textField(.{}),
         //capy.checkBox(.{ .label = "Bounded Random" }),
         //capy.label(.{ .alignment = .Left, .text = "Variance" }),
         //capy.textField(.{ .readOnly = true }),
@@ -227,27 +278,43 @@ pub fn main() !void {
 
     const cont_exp = try capy.column(.{ .name = "11" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Start Value" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Value" }),
-        capy.textField(.{}),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Value" }),
+            capy.label(.{ .alignment = .Left, .text = "End Value" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
         //capy.checkBox(.{ .label = "Bounded Random" }),
     });
 
     const cont_sin = try capy.column(.{ .name = "12" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Lower Bound" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Upper Bound" }),
-        capy.textField(.{}),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Lower Bound" }),
+            capy.label(.{ .alignment = .Left, .text = "Upper Bound" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
         capy.label(.{ .alignment = .Left, .text = "Cycles" }),
         capy.textField(.{}),
         //capy.label(.{ .alignment = .Left, .text = "Cycles" }),
@@ -274,26 +341,42 @@ pub fn main() !void {
 
     const cont_adj = try capy.column(.{ .name = "14" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Lower Bound" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Upper Bound" }),
-        capy.textField(.{}),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Lower Bound" }),
+            capy.label(.{ .alignment = .Left, .text = "Upper Bound" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
     });
 
     const cont_lin_vol = try capy.column(.{ .name = "15" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Start Volume" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Volume" }),
-        capy.textField(.{}),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Volume" }),
+            capy.label(.{ .alignment = .Left, .text = "End Volume" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
     });
 
     //***************************************************
@@ -302,33 +385,48 @@ pub fn main() !void {
 
     const cont_snap_to = try capy.column(.{ .name = "20" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        capy.textField(.{}),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
         capy.label(.{ .alignment = .Left, .text = "List of snappings" }),
         capy.textField(.{ .text = "4, 6, 8, 12" }),
-        //capy.textField(.{}),
     });
 
     const cont_to_barline = try capy.column(.{ .name = "21" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Lines per D" }),
-        capy.textField(.{ .text = "" }),
-        capy.label(.{ .alignment = .Left, .text = "Lines per K" }),
-        capy.textField(.{ .text = "" }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Lines per D" }),
+            capy.label(.{ .alignment = .Left, .text = "Lines per K" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
     });
 
     const cont_to_unhittable = try capy.column(.{ .name = "22" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End time" }),
-        capy.textField(.{}),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
         capy.label(.{ .alignment = .Left, .text = "Offset" }),
         capy.textField(.{}),
     });
@@ -339,16 +437,80 @@ pub fn main() !void {
 
     const cont_static_rand_barline = try capy.column(.{ .name = "30" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Min BPM" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Max BPM" }),
-        capy.textField(.{}),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Min BPM" }),
+            capy.label(.{ .alignment = .Left, .text = "Max BPM" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
         capy.label(.{ .alignment = .Left, .text = "Percent Chance" }),
         capy.textField(.{}),
+        capy.checkBox(.{ .label = "Escape out notes in this section", .checked = true }),
+    });
+
+    const cont_linear_60k_bl = try capy.column(.{ .name = "31" }, .{
+        capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Starting Lines" }),
+            capy.label(.{ .alignment = .Left, .text = "Ending Lines" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.label(.{ .alignment = .Left, .text = "Resolution" }),
+        capy.textField(.{}),
+        capy.checkBox(.{ .label = "Escape out notes in this section", .checked = true }),
+    });
+
+    const cont_60k_bl_creator = try capy.column(.{ .name = "32" }, .{
+        capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{ // the name field is just going to be used as a label for what is in the section
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Starting lines" }),
+            capy.label(.{ .alignment = .Left, .text = "Ending lines" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Starting meter" }),
+            capy.label(.{ .alignment = .Left, .text = "Ending meter" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.label(.{ .alignment = .Left, .text = "Resolution" }),
+        capy.textField(.{}),
+        capy.checkBox(.{ .label = "Escape any notes in this section", .checked = true }), // TBI
+        capy.checkBox(.{ .label = "Omit last barline", .checked = false }), // TBI
     });
     //const cont_barlines_tba = try capy.column(.{ .name = "30" }, .{ // PLACEHOLDER
     //    capy.label(.{ .alignment = .Center, .text = "Coming soon (tm)" }),
@@ -363,11 +525,7 @@ pub fn main() !void {
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
         capy.label(.{ .alignment = .Left, .text = "osu! Song directory path" }),
         capy.textField(.{}),
-
-        // TEST
-        capy.button(.{ .label = "Detect (this may take some time)", .onclick = @ptrCast(&preaderBtn) }),
-        // TEST
-
+        capy.button(.{ .label = "Detect", .onclick = @ptrCast(&preaderBtn) }), // TODO: Feel like this would be nicer if it was beside the textbox ^
         capy.label(.{ .alignment = .Left, .text = "SV Settings" }),
         capy.checkBox(.{ .label = "Snap SV to notes", .checked = true }),
         capy.checkBox(.{ .label = "Normalize SV over BPM changes", .checked = true }),
@@ -386,7 +544,7 @@ pub fn main() !void {
 
     CURR_FILE_LABEL = capy.label(.{ .alignment = .Left, .text = "No file selected..." });
     const header_bar = capy.row(.{ .name = "z", .expand = .No, .spacing = 5 }, .{
-        CURR_FILE_LABEL orelse unreachable,
+        capy.expanded(CURR_FILE_LABEL orelse unreachable),
     });
 
     const global_opt_bar = capy.row(.{ .name = "y", .expand = .No, .spacing = 5 }, .{
@@ -406,10 +564,12 @@ pub fn main() !void {
     const tab_to_unhit = capy.tab(.{ .label = "Unhittable note" }, cont_to_unhittable);
 
     const tab_static_rand_bl = capy.tab(.{ .label = "Random barline" }, cont_static_rand_barline);
+    const tab_linear_60k_bl = capy.tab(.{ .label = "Linear 60k barlines" }, cont_linear_60k_bl);
+    const tab_60k_bl_creator = capy.tab(.{ .label = "60k barline creator" }, cont_60k_bl_creator);
 
     const tab_cont_sv = capy.tabs(.{ tab_lin, tab_exp, tab_sin, tab_bez, tab_adj, tab_lin_vol });
     const tab_cont_hobj = capy.tabs(.{ tab_snap, tab_to_bar, tab_to_unhit });
-    const tab_cont_barlines = capy.tabs(.{tab_static_rand_bl});
+    const tab_cont_barlines = capy.tabs(.{ tab_static_rand_bl, tab_linear_60k_bl, tab_60k_bl_creator });
 
     const tab_cont_1 = capy.tab(.{ .label = "Slider Velocity" }, tab_cont_sv);
     const tab_cont_2 = capy.tab(.{ .label = "Hit Objects" }, tab_cont_hobj);
@@ -425,8 +585,8 @@ pub fn main() !void {
             main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
                 //CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
                 header_bar,
-                TEST_IMG,
                 global_opt_bar,
+                TEST_IMG,
                 main_tab_cont,
             });
         },
@@ -440,7 +600,7 @@ pub fn main() !void {
         },
     }
 
-    window.setPreferredSize(240, 320);
+    window.setPreferredSize(720, 720);
 
     window.setTitle("SV Buddy");
 
