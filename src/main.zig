@@ -21,20 +21,12 @@ const pread = @import("./util/proc_read.zig");
 //=============================================
 //  VERY BIG TODO
 //=============================================
-//  * MAKE THIS PROGRAM STORE CHANGES IN A DIFF FORMAT S.T. YOU CAN UNDO AND REDO EFFECTS
-//  * SWITCH ALL PAGE_ALLOCATORS TO GeneralPurposeAllocators
+//  * MAKE THIS PROGRAM STORE CHANGES IN A DIFF FORMAT INSTEAD OF THE DUMB FORMAT ITS IN NOW
+//  * SWITCH ALL page_allocator TO GeneralPurposeAllocator or FixedBufferAllocator
 //=============================================
 // LAYOUT IDEA
 //=============================================
-// -----------on startup
-//      top: column container w/ search bar and scrollable menu for song select
-//              *  RESEARCH: look if you can read process data and find the current song that way
-//      bottom: settings tab
-// -----------post song select
-//      top: either a graph showing sv and bpm changes throughout the map
-//           or some kind of visual helper for the effect being applied (this might just become its own little pop up window)
-//      bottom: hopefully a better interface than what i have now.
-//              *  RESEARCH: look at other tools for inspiration
+//  * Go look at other tools for inspiration on layouts
 //=============================================
 
 // This is required for your app to build to WebAssembly and other particular architectures
@@ -45,7 +37,7 @@ var CURR_FILE: ?*osufile.OsuFile = null;
 var OPTION_FLAG: u8 = 0;
 var CURR_FILE_LABEL: ?*capy.Label = null;
 var PREADER: pread.ProcReader = undefined;
-const SETTINGS_LOCATIONS = [_]usize{ 5, 6, 7, 8, 9, 10, 12 }; // Edit this when adding more boolean vars
+const SETTINGS_LOCATIONS = [_]usize{ 5, 6, 7, 8, 9, 10, 12 }; // Edit this when adding more boolean vars to the settings menu
 
 fn undoButton(btn: *capy.Button) anyerror!void {
     _ = btn;
@@ -60,8 +52,8 @@ fn redoButton(btn: *capy.Button) anyerror!void {
 fn preaderBtn(btn: *capy.Button) anyerror!void {
     //defer PREADER.deinit(); //test
     const parent_wgt = btn.*.getParent().?.as(capy.Container);
-    var params = [_][]u8{undefined} ** 10;
-    params[9] = try std.heap.page_allocator.alloc(u8, 1);
+    var params = [_][]u8{undefined} ** 16;
+    params[15] = try std.heap.page_allocator.alloc(u8, 1);
     defer for (0..10) |k| std.heap.page_allocator.free(params[k]);
 
     //const tmp = try wrapper.preadTest(&PREADER); // THIS IS STUPID AND NOT NEEDED
@@ -77,7 +69,7 @@ fn preaderBtn(btn: *capy.Button) anyerror!void {
     // ...
     // I
     // LOVE
-    // WCHARS
+    // WCHARS - TODO: this needs to be fixed as it causes errors w/ non-ascii filepaths
 
     var strlen: usize = 0;
     for (beatmap) |c| {
@@ -118,11 +110,11 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
     var p: usize = 1;
     var max: usize = 0;
 
-    // params[0] is always the parent name, params[9] is always the option flag
-    var params = [_][]u8{undefined} ** 10;
-    params[9] = try std.heap.page_allocator.alloc(u8, 1);
+    // params[0] is always the parent name, params[15] is always the option flag
+    var params = [_][]u8{undefined} ** 16;
+    params[15] = try std.heap.page_allocator.alloc(u8, 1);
     defer {
-        for (0..10) |k| std.heap.page_allocator.free(params[k]);
+        for (0..params.len) |k| std.heap.page_allocator.free(params[k]);
     }
 
     switch (parent_name[0] - '0') {
@@ -155,6 +147,7 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         3 => {
             switch (parent_name[1] - '0') {
                 0, 1 => max = 6,
+                2 => max = 10,
                 else => unreachable,
             }
         },
@@ -164,36 +157,38 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
     params[0] = try std.heap.page_allocator.alloc(u8, parent_name.len);
     @memcpy(params[0], parent_name);
 
-    params[9][0] = OPTION_FLAG; // This should always be the last param
+    params[15][0] = OPTION_FLAG; // This should always be the last param
 
-    // This is awful and slow
-    while (i <= max) : (i += 2) {
-        //std.debug.print("i={},{}\n", .{ i, max });
-        if ((try parent_wgt.*.getChildAt(i)).is(capy.Container)) {
-            //std.debug.print("a\n", .{});
+    // Awful and slow way of doing something simple
+    while (i <= max) : (i += 1) {
+        // I dont really know a faster way of doing this....
+        if ((try parent_wgt.*.getChildAt(i)).is(capy.Label)) {
+            continue; // Skip any labels
+        } else if ((try parent_wgt.*.getChildAt(i)).is(capy.Container)) {
             const row_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.Container);
+
             for (0..(row_wgt.widget.?.name.get() orelse unreachable).len) |j| {
-                //std.debug.print("#{}\n", .{j});
-                const text_out = switch ((row_wgt.*.widget.?.name.get() orelse unreachable)[j]) {
+                const text_out = switch ((row_wgt.*.widget.?.name.get() orelse unreachable)[j]) { // This is so ass
                     'T' => (try row_wgt.*.getChildAt(j)).as(capy.TextField).*.text.get(),
                     'C' => if ((try row_wgt.*.getChildAt(j)).as(capy.CheckBox).*.checked.get()) @constCast("1") else @constCast("0"),
+                    'L' => continue, // just skip any label fields
                     else => unreachable,
                 };
-                //const text_out = text_wgt.*.text.get();
+
                 params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
                 @memcpy(params[p], text_out);
                 p += 1;
             }
         } else if ((try parent_wgt.*.getChildAt(i)).is(capy.CheckBox)) {
-            //std.debug.print("b\n", .{});
             const cb_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.CheckBox);
+
             const text_out = if (cb_wgt.*.checked.get()) @constCast("1") else @constCast("0"); // Hopefully this works??
             params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
             @memcpy(params[p], text_out);
             p += 1;
         } else {
-            //std.debug.print("c\n", .{});
             const text_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.TextField);
+
             const text_out = text_wgt.*.text.get();
             params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
             @memcpy(params[p], text_out);
@@ -231,7 +226,7 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         },
         3 => {
             switch (parent_name[1] - '0') {
-                0, 1 => try wrapper.applyBarlineFn(CURR_FILE, params),
+                0...2 => try wrapper.applyBarlineFn(CURR_FILE, params),
                 else => unreachable,
             }
         },
@@ -481,7 +476,7 @@ pub fn main() !void {
         capy.checkBox(.{ .label = "Escape out notes in this section", .checked = true }),
     });
 
-    const cont_60k_bl_creator = try capy.column(.{ .name = "32" }, .{
+    const cont_60k_bl_creator = try capy.column(.{ .name = "32", .expand = .No }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
         capy.row(.{ .name = "LL", .expand = .Fill }, .{ // the name field is just going to be used as a label for what is in the section
             capy.label(.{ .alignment = .Left, .text = "Start Time" }),
@@ -495,22 +490,24 @@ pub fn main() !void {
             capy.label(.{ .alignment = .Left, .text = "Starting lines" }),
             capy.label(.{ .alignment = .Left, .text = "Ending lines" }),
         }),
-        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+        capy.row(.{ .name = "TTC", .expand = .Fill }, .{
             capy.textField(.{}),
             capy.textField(.{}),
+            capy.checkBox(.{ .label = "Enable", .checked = false }),
         }),
         capy.row(.{ .name = "LL", .expand = .Fill }, .{
             capy.label(.{ .alignment = .Left, .text = "Starting meter" }),
             capy.label(.{ .alignment = .Left, .text = "Ending meter" }),
         }),
-        capy.row(.{ .name = "TT", .expand = .Fill }, .{
-            capy.textField(.{}),
-            capy.textField(.{}),
+        capy.row(.{ .name = "TTC", .expand = .Fill }, .{
+            capy.textField(.{ .text = "1" }),
+            capy.textField(.{ .text = "1" }),
+            capy.checkBox(.{ .label = "Enable", .checked = false }),
         }),
         capy.label(.{ .alignment = .Left, .text = "Resolution" }),
-        capy.textField(.{}),
-        capy.checkBox(.{ .label = "Escape any notes in this section", .checked = true }), // TBI
-        capy.checkBox(.{ .label = "Omit last barline", .checked = false }), // TBI
+        capy.textField(.{ .text = "16" }), // This refers to the snapping which the notes are at
+        capy.checkBox(.{ .label = "Escape any notes in this section", .checked = true }),
+        capy.checkBox(.{ .label = "Omit last barline", .checked = false }),
     });
     //const cont_barlines_tba = try capy.column(.{ .name = "30" }, .{ // PLACEHOLDER
     //    capy.label(.{ .alignment = .Center, .text = "Coming soon (tm)" }),
@@ -581,18 +578,16 @@ pub fn main() !void {
     var main_cont: *capy.Container = undefined;
     switch (builtin.os.tag) {
         .linux => {
-            const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/Zig/SVBUDDY/test_files/svbuddy.png", .scaling = .Fit }); // TODO: HOW THE FUCK DO I GET THIS TO JUST READ A RELATIVE PATH FML!!!!!!!!
+            //const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/Zig/SVBUDDY/test_files/svbuddy.png", .scaling = .Fit }); // TODO: HOW THE FUCK DO I GET THIS TO JUST READ A RELATIVE PATH FML!!!!!!!!
             main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
-                //CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
                 header_bar,
                 global_opt_bar,
-                TEST_IMG,
+                //TEST_IMG, - i dont think this is really needed... id say make it the map bg but i dont think this does jpg
                 main_tab_cont,
             });
         },
-        else => { // Im not sure if images are supported on other platforms
+        else => {
             main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
-                //CURR_FILE_LABEL orelse unreachable, // This shouldn't fail
                 header_bar,
                 global_opt_bar,
                 main_tab_cont,
@@ -600,9 +595,9 @@ pub fn main() !void {
         },
     }
 
-    window.setPreferredSize(720, 720);
+    window.setPreferredSize(600, 640); // May need to be expanded in the future
 
-    window.setTitle("SV Buddy");
+    window.setTitle("SVBuddy");
 
     try window.set(main_cont);
 

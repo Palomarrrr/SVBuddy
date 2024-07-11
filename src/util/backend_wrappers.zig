@@ -16,7 +16,7 @@ pub const BackendError = error{
 
 pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
     if (opt_targ) |target| {
-        std.debug.print("options:{b}\n", .{params[9][0]});
+        std.debug.print("options:{b}\n", .{params[15][0]});
 
         // Refresh the file incase any changes were made
         try target.*.refresh();
@@ -29,65 +29,50 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         const val4: f32 = std.fmt.parseFloat(f32, params[6]) catch 0;
         _ = val4;
 
-        //std.debug.print("RECIEVED FROM MAIN: {}:{}:{d:.2}:{d:.2}:{}\n", .{ start, end, val1, val2, val3 });
-
         const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
-        std.debug.print("\n\n", .{});
         const ext_hobj = try target.*.extentsOfSection(start, end, hobj.HitObject);
         //std.debug.print("Found section extents: {any} | {any}\n", .{ ext_tp, ext_hobj });
 
         const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
-        std.debug.print("Found section bpm\n", .{});
         var tp = try com.create(sv.TimingPoint);
         defer std.heap.page_allocator.free(tp);
 
-        // TESTING
+        // Create undo entry
         var bck = try com.create(sv.TimingPoint);
         defer std.heap.page_allocator.free(bck);
         _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &bck);
-        std.debug.print("Made BCK for backup\n", .{});
-        std.debug.print("BCK:{any},{}\n", .{ ext_tp, bck.len });
         try createUndo(start, end, bck, false);
-        // TESTING
 
-        //if (params[0][1] != '4' and ext_tp[2] != 0) { // Janky fix to make sure that we aren't generating sv when adjusting an old section
         if (params[0][1] != '4' and params[0][1] != '5') { // Janky fix to make sure that we aren't generating sv when adjusting an old section
             var hobjs = try com.create(hobj.HitObject);
             defer std.heap.page_allocator.free(hobjs);
-            const keep_prev: bool = !((params[9][0] & 0x4) == 1);
+            const keep_prev: bool = !((params[15][0] & 0x4) == 1);
 
-            std.debug.print("Creating objarrs\n", .{});
-            std.debug.print("a\n", .{});
-            if (ext_hobj[2] == 0 or (params[9][0] & 0x1) == 0) { // If no hit objs
-                std.debug.print("Making new tpobjarr1: HOBJ = 0\n", .{});
+            if (ext_hobj[2] == 0 or (params[15][0] & 0x1) == 0) { // If no hit objs
+                std.debug.print("LOG: HOBJ = 0\n", .{});
                 try sv.createNewSVSection(&tp, null, start, end, 12, bpm[0], keep_prev); // TODO: ADD SNAPPING
             } else {
-                std.debug.print("b | {any}\n", .{ext_hobj});
-                //if (params[9][0] & 0x1 == 1) try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs); // Check if we even want to snap things to the notes
+                //if (params[15][0] & 0x1 == 1) try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs); // Check if we even want to snap things to the notes
                 try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs); // TODO: Make sure this works the same (it should in theory)
-                std.debug.print("Making new tpobjarr1\n", .{});
                 try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm[0], keep_prev);
             }
 
-            std.debug.print("made tpobjarr1\n", .{});
-
-            if (ext_tp[2] != 0 and (params[9][0] & 0x4) == 0) { // If points existed previously | this is only important if we have uninherited timing points
+            if (ext_tp[2] != 0 and (params[15][0] & 0x4) == 0) { // If points existed previously | this is only important if we have uninherited timing points
                 var tp2 = try com.create(sv.TimingPoint);
                 _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tp2);
-                std.debug.print("made tpobjarr2\n", .{});
                 defer std.heap.page_allocator.free(tp2);
 
                 const n_inh = sv.getNumInherited(tp2);
                 const n_uinh = tp2.len - n_inh;
 
                 if (n_uinh != 0) { // if there are uninherited points in the section
-                    var uinh = if (params[9][0] & 0x8 != 0) try std.heap.page_allocator.alloc(sv.TimingPoint, n_uinh * 2) else try std.heap.page_allocator.alloc(sv.TimingPoint, n_uinh); // build an array w/ only uninherited
+                    var uinh = if (params[15][0] & 0x8 != 0) try std.heap.page_allocator.alloc(sv.TimingPoint, n_uinh * 2) else try std.heap.page_allocator.alloc(sv.TimingPoint, n_uinh); // build an array w/ only uninherited
                     //defer std.heap.page_allocator.free(uinh); // TODO: CHECK IF THIS FUCKS THINGS
                     var i: usize = 0;
                     for (tp2) |p| {
                         if (p.is_inh == 1) {
                             uinh[i] = p;
-                            if ((params[9][0] & 0x8) != 0) {
+                            if ((params[15][0] & 0x8) != 0) {
                                 uinh[i + 1] = sv.TimingPoint{ // TODO: DONT GENERATE IF NOTE EXISTS ON THIS SINCE THERE WILL ALREADY BE A INH POINT THERE
                                     .time = p.time,
                                     .is_inh = 0,
@@ -104,15 +89,14 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
                         }
                     }
                     try sv.mergeSvArrs(&tp, uinh); // Merge the two sv arrs
-                    if (params[9][0] & 0x8 != 0 and params[9][0] & 0x1 == 1) try sv.pruneUnusedSv(&tp, hobjs); // check for param 0x1 just incase | TODO: harden pruneUnusedSv for hobjs.len == 0
+                    if (params[15][0] & 0x8 != 0 and params[15][0] & 0x1 == 1) try sv.pruneUnusedSv(&tp, hobjs); // check for param 0x1 just incase | TODO: harden pruneUnusedSv for hobjs.len == 0
                 }
             }
         } else {
             if (ext_tp[2] == 0) return BackendError.SectionDNE;
             _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tp);
-            //try createUndo(ext_tp, tp, false); // TESTING
         }
-        for (tp) |u| std.debug.print("{s}", .{try u.toStr()});
+        //for (tp) |u| std.debug.print("{s}", .{try u.toStr()}); // DBG
 
         // Apply the effect
         switch (params[0][1] - '0') {
@@ -124,7 +108,7 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             else => unreachable,
         }
 
-        try target.*.placeSection(ext_tp[0], ext_tp[1], tp); // Place
+        try target.*.placeSection(ext_tp[0], ext_tp[1], tp);
     } else return osufile.OsuFileIOError.FileDNE;
 }
 
@@ -144,9 +128,7 @@ pub fn applyHObjFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         _ = val4;
 
         const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
-        std.debug.print("TimingPoint Extents: {any}\n", .{ext_tp});
         const ext_hobj = try target.*.extentsOfSection(start, end, hobj.HitObject);
-        std.debug.print("HitObject Extents: {any}\n", .{ext_hobj});
 
         var tps = try com.create(sv.TimingPoint);
         var hobjs = try com.create(hobj.HitObject);
@@ -154,15 +136,12 @@ pub fn applyHObjFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         defer std.heap.page_allocator.free(hobjs);
 
         if (ext_tp[2] != 0) _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tps);
-        std.debug.print("Finished loading ext_tp\n", .{});
 
         _ = try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs);
-        std.debug.print("Finished loading ext_hobj: {},{}\n", .{ ext_hobj[2], hobjs.len });
 
         try createUndo(start, end, hobjs, false); // TESTING
 
         const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
-        std.debug.print("Found bpm\n", .{});
 
         switch (params[0][1] - '0') {
             0 => try hobj.snapNotesTo(hobjs, params[3], tps, bpm[0], @as(i32, @intFromFloat(bpm[1]))),
@@ -170,10 +149,7 @@ pub fn applyHObjFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             2 => try hobj.toUnhittableNote(&hobjs, @as(i32, @intFromFloat(val1))),
             else => unreachable,
         }
-        std.debug.print("FN Called\n", .{});
-        for (hobjs) |h| std.debug.print("{any}\n", .{h});
         try target.*.placeSection(ext_hobj[0], ext_hobj[1], hobjs); // Place
-        std.debug.print("Placed Section\n", .{});
     } else return osufile.OsuFileIOError.FileDNE;
 }
 
@@ -188,37 +164,54 @@ pub fn applyBarlineFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         const val2: f32 = std.fmt.parseFloat(f32, params[4]) catch 0;
         const val3: f32 = std.fmt.parseFloat(f32, params[5]) catch 0;
         const val4: f32 = std.fmt.parseFloat(f32, params[6]) catch 0;
-        _ = val4;
+        const val5: f32 = std.fmt.parseFloat(f32, params[7]) catch 0;
+        const val6: f32 = std.fmt.parseFloat(f32, params[8]) catch 0;
+        const val7: f32 = std.fmt.parseFloat(f32, params[9]) catch 0;
+        const val8: f32 = std.fmt.parseFloat(f32, params[10]) catch 0;
+        const val9: f32 = std.fmt.parseFloat(f32, params[11]) catch 0;
 
         const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
 
         var bck = try com.create(sv.TimingPoint);
-        //std.debug.print("Here | {any}\n", .{@TypeOf(&bck)});
         _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &bck);
-        //std.debug.print("out\n", .{});
         try createUndo(start, end, bck, false); // TESTING
 
         const tps = try com.create(sv.TimingPoint);
         defer std.heap.page_allocator.free(tps);
 
-        if (ext_tp[2] != 0) return BackendError.SectionConflict;
+        //if (ext_tp[2] != 0) return BackendError.SectionConflict; // Either remove this or only make it trigger on a different case
 
-        //std.debug.print("exts: {}=>{}\n", .{ ext_tp[0], ext_tp[1] });
         const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
-        //std.debug.print("bpm: {d:.2}\n", .{bpm[0]});
         var tp_out: ?[]sv.TimingPoint = null; // Prolly doesnt need to be opt
 
         switch (params[0][1] - '0') {
             0 => {
                 const chance: u8 = @as(u8, @intFromFloat(val3));
-                //std.debug.print("chance: {}\n", .{chance});
                 tp_out = try bl.staticRandomBarlines(bpm[0], start, end, chance, val1, val2);
             },
             1 => {
-                const res: u8 = @as(u8, @intFromFloat(val3));
-                tp_out = try bl.linear60kBarline(bpm[0], start, end, val1, val2, 1920, res);
+                return BackendError.SectionConflict; // Irrelivant after blcreator exists
+                //const res: u8 = @as(u8, @intFromFloat(val3));
+                //tp_out = try bl.linear60kBarline(bpm[0], start, end, val1, val2, 1920, res);
             },
-            //2 => ,
+            2 => {
+
+                // Set up opts
+                var opts: u8 = 0;
+                opts |= @as(u8, @intFromFloat(val8)); // Escape notes in this section
+                opts |= (@as(u8, @intFromFloat(val9)) << 1); // Omit first barline of section end
+
+                tp_out = try bl.create60kSection(bpm[0], start, end, opts);
+                if (val3 == 1) { // If line edit is enabled
+                    const res: u8 = @as(u8, @intFromFloat(val7));
+                    try bl.linear60kBarline(&(tp_out.?), val1, val2, 1920, res); // Why is this optional??
+                }
+                if (val6 == 1) { // If meter edit is enabled
+                    const meter_start: u16 = @as(u16, @intFromFloat(val4));
+                    const meter_end: u16 = @as(u16, @intFromFloat(val5));
+                    try bl.linear60kMeter(&(tp_out.?), meter_start, meter_end);
+                }
+            },
             else => unreachable,
         }
         if (tp_out) |tp| {
@@ -231,7 +224,7 @@ pub fn initTargetFile(params: anytype) !?*osufile.OsuFile {
     std.debug.print("inittfile\n{s}\n", .{params[1]});
     const retval: *osufile.OsuFile = try std.heap.page_allocator.create(osufile.OsuFile);
     try retval.*.init(params[1]);
-    if (params[9][0] & 0x40 != 0) {
+    if (params[15][0] & 0x40 != 0) {
         const bckup_path = try retval.*.createBackup();
         defer std.heap.page_allocator.free(bckup_path);
         std.debug.print("LOG: Created backup file at `{s}`!\n", .{bckup_path});

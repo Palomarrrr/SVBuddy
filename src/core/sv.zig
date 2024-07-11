@@ -28,8 +28,8 @@ pub const TimingPoint = struct {
     /// Either the 60000/BPM (positive number), or -100/svValue (negative number)
     value: f32 = 1.0,
     /// Number of beats in the measure
-    meter: u8 = 4,
-    /// What sample set of sounds to use. This really shouldnt be higher than a 4 bit number or you have problems
+    meter: u16 = 4,
+    /// What sample set of sounds to use. This really shouldnt be higher than a 4 bit number or you have problems : Consider promoting to 16bit just because?
     sample_set: u8 = 1,
     /// This is pretty self explanitory
     volume: u8 = 100,
@@ -49,9 +49,16 @@ pub const TimingPoint = struct {
         var last: usize = 0;
 
         const eol = if (ascii.indexOfIgnoreCase(str, &[_]u8{ '\r', '\n' })) |ret| ret else return TimingPointError.IncompleteLine;
+        // I HATE THIS SHIT AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        // Basically this is a stupid check to see if theres a \n at the beginning of a line because I'm an incompetent piece of shit....
+        const chk = if (ascii.indexOfIgnoreCase(str, &[_]u8{'\n'})) |ret| ret else return TimingPointError.IncompleteLine;
+        std.debug.print("EOL:{},CHK:{}\n", .{ eol, chk });
+        if (eol + 1 != chk) last += 1;
 
+        std.debug.print("FROMSTR\n", .{});
         while (field < 7) : (field += 1) {
             const ind = ascii.indexOfIgnoreCasePos(str, last, &[_]u8{','}) orelse return TimingPointError.IncompleteLine;
+            std.debug.print("field: `{s}`\n", .{str[last..ind]});
             switch (field) {
                 0 => {
                     self.time = try fmt.parseInt(i32, str[last..ind], 10);
@@ -60,7 +67,7 @@ pub const TimingPoint = struct {
                     self.value = try fmt.parseFloat(f32, str[last..ind]);
                 },
                 2 => {
-                    self.meter = try fmt.parseUnsigned(u8, str[last..ind], 10);
+                    self.meter = try fmt.parseUnsigned(u16, str[last..ind], 10);
                 },
                 3 => {
                     self.sample_set = try fmt.parseUnsigned(u8, str[last..ind], 10);
@@ -80,6 +87,7 @@ pub const TimingPoint = struct {
             }
             last = ind + 1;
         }
+        std.debug.print("FROMSTR END\n", .{});
         //std.debug.print("final: `{s}`\n", .{str[last..eol]});
         self.effects = try fmt.parseUnsigned(u8, str[last..eol], 10);
         //std.debug.print("Finished line\n", .{});
@@ -93,7 +101,7 @@ pub const TimingPoint = struct {
 // I LOVE CASTING AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 pub fn volumeLinear(sv_arr: []TimingPoint, vol_start: u8, vol_end: u8) !void {
     var curr_vol: f32 = @floatFromInt(vol_start);
-    const vol_slope: f32 = @as(f32, @floatFromInt(vol_end - vol_start)) / @as(f32, @floatFromInt(sv_arr[sv_arr.len - 1].time - sv_arr[0].time));
+    const vol_slope: f32 = (@as(f32, @floatFromInt(vol_end)) - @as(f32, @floatFromInt(vol_start))) / @as(f32, @floatFromInt(sv_arr[sv_arr.len - 1].time - sv_arr[0].time));
     for (0..sv_arr.len) |i| {
         curr_vol = (vol_slope * @as(f32, @floatFromInt(sv_arr[i].time - sv_arr[0].time))) + @as(f32, @floatFromInt(vol_start));
         sv_arr[i].volume = @as(u8, @truncate(@as(u32, @intFromFloat(@round(curr_vol)))));

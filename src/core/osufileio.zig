@@ -49,7 +49,6 @@ pub const OsuFile = struct {
 
         self.path = try std.heap.page_allocator.alloc(u8, path.len);
         @memcpy(self.path, path);
-        std.debug.print("SPATH: {s}\n", .{self.path});
 
         self.file = fs.openFileAbsolute(self.path, .{ .mode = .read_write }) catch {
             return OsuFileIOError.NoPathGiven;
@@ -197,7 +196,6 @@ pub const OsuFile = struct {
 
             bytes_read = try self.file.?.readAll(&buffer);
             const eol = std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{'\n'}) orelse bytes_read;
-            //std.debug.print("GOT: `{s}`\n", .{buffer});
             var last_i_b: usize = 0;
 
             _char: while (eol != 0) {
@@ -205,16 +203,12 @@ pub const OsuFile = struct {
                 if (i_b >= eol) break :_char; // We shouldnt be reading past the end
                 if (f == t) { // if the current field == the target
                     const found_time = try std.fmt.parseInt(i32, buffer[last_i_b..i_b], 10);
-                    std.debug.print("Found point at `{}`\n", .{found_time});
-                    //std.debug.print("\tBounds: `{}`->`{}`\n", .{ lower, upper });
                     if (lower <= found_time and found_time <= upper) {
                         if (!last_in_range) {
                             retval[0] = @intCast(try self.file.?.getPos() - bytes_read); // f->t transition
-                            //std.debug.print("First!\n", .{});
                         }
                         last_in_range = true;
                         retval[2] += 1;
-                        //std.debug.print("Found point!\n", .{});
                     } else {
                         if (last_in_range or found_time > upper) {
                             //if (found_time > upper) { // This should be saying the same thing
@@ -266,6 +260,7 @@ pub const OsuFile = struct {
         return retval;
     }
 
+    // Returns the [the bpm in orf (osu readable form), time in ms]
     pub fn findSectionInitialBPM(self: *OsuFile, offset: usize) ![2]f32 {
         var buffer = [_]u8{0} ** 64;
         var bytes_read: usize = 0;
@@ -282,7 +277,7 @@ pub const OsuFile = struct {
             _for: for (buffer, 0..buffer.len) |c, i| {
                 switch (c) {
                     '\n' => {
-                        try self.file.?.seekBy(@as(isize, @intCast(i)) - @as(isize, @intCast(bytes_read)) + 2); // Seek back
+                        try self.file.?.seekBy(@as(isize, @intCast(i)) - @as(isize, @intCast(bytes_read)) + 1); // Seek back | changed from ( + 2 ) -> ( + 1 )
                         break :_for; // Start over
                     },
                     ',' => {
@@ -324,7 +319,7 @@ pub const OsuFile = struct {
             }
             fields += 1;
         }
-        //std.debug.print("BPMRET: {s}, {s}\n", .{ buffer[bpmoffset[0]..bpmoffset[1]], buffer[0 .. bpmoffset[0] - 1] });
+        std.debug.print("bpm got: `{s}`{s}` | full: {s}\n", .{ buffer[bpmoffset[0]..bpmoffset[1]], buffer[0 .. bpmoffset[0] - 1], buffer });
         return [2]f32{ 60000.0 / try fmt.parseFloat(f32, buffer[bpmoffset[0]..bpmoffset[1]]), try fmt.parseFloat(f32, buffer[0 .. bpmoffset[0] - 1]) };
     }
 
@@ -334,7 +329,6 @@ pub const OsuFile = struct {
     }
 
     pub fn placeSection(self: *OsuFile, start: usize, end: usize, arr: anytype) !void {
-        std.debug.print("IN: placeSection\n", .{});
         if (self.file == null) return OsuFileIOError.FileDNE;
 
         // This is fucked... just let me use an if statement please
@@ -357,20 +351,15 @@ pub const OsuFile = struct {
             len -= 1;
         }
 
-        std.debug.print("Allocing for file name\n", .{});
         const tmp_pref: []u8 = try std.heap.page_allocator.alloc(u8, len);
-        std.debug.print("Copying path\n", .{});
         @memcpy(tmp_pref, self.path[0..len]);
-        std.debug.print("Creating path\n", .{});
         const tmp_path = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ tmp_pref, @constCast("tmp.txt") });
         defer std.heap.page_allocator.free(tmp_path);
 
-        std.debug.print("Creating file at path\n", .{});
         const tmpfp: fs.File = try fs.createFileAbsolute(tmp_path, .{ .read = true, .truncate = true });
 
         try self.file.?.seekTo(0);
 
-        std.debug.print("Copying old conts\n", .{});
         var t = [_]u8{0};
         var l: usize = 1;
         for (0..start) |_| {
@@ -380,7 +369,6 @@ pub const OsuFile = struct {
         if (t[0] == '\r') try tmpfp.writeAll(&[_]u8{10});
 
         // Insert the new stuff
-        std.debug.print("Inserting new: arr.len = {}\n", .{arr.len});
         for (arr) |a| {
             const s = try a.toStr();
             defer std.heap.page_allocator.free(s);
@@ -389,7 +377,6 @@ pub const OsuFile = struct {
 
         try self.file.?.seekTo(end); // pick at the end of the section we want to replace
 
-        std.debug.print("Resuming\n", .{});
         while (l == 1) {
             l = try self.file.?.readAll(&t);
             _ = try tmpfp.writeAll(&t);
@@ -402,7 +389,6 @@ pub const OsuFile = struct {
         try fs.renameAbsolute(tmp_path, self.path); // Move
 
         // This shouldn't cause a leak I think?
-        std.debug.print("Fixing struct file descriptor\n", .{});
         self.file = try fs.openFileAbsolute(self.path, .{ .mode = .read_write });
         std.debug.print("Finding new section offsets\n", .{});
         try self.findSectionOffsets();
@@ -441,7 +427,7 @@ pub const OsuFile = struct {
         // Warn if file is really big
         const file_size: usize = @intCast(try self.file.?.getEndPos());
         if ((file_size / 1024) >= 1500) { // Don't want to spend forever processing and or hog a ton or memory
-            std.debug.print("\x1b[33mWARNING: What the hell man...\nWhy are you editing nanaparty with this shitty tool\n(File size exceeds 1.5Mb)\x1b[0m\n", .{});
+            std.debug.print("\x1b[33mWARNING: What the hell man...\nWhy are you editing nanaparty with this shitty tool\n(File size exceeds 1.5Mb... Expect some operations to take a while)\x1b[0m\n", .{});
             return OsuFileIOError.FileTooLarge; // Return an error
         }
 
@@ -494,20 +480,32 @@ pub const OsuFile = struct {
 
         arr.* = if (size != 0) (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), size)) else return //OsuObjErr.NoPointsGiven;
 
-        std.debug.print("loadObjArr: OFFSET = {}\n", .{offset});
+        //DEBUG
+        std.debug.print("OFFSET DEBUG:\n", .{});
+        try self.file.?.seekTo(offset - 3);
+
+        var b = [_]u8{0};
+        for (0..20) |i| {
+            _ = try self.file.?.readAll(&b);
+            if (i == 3) std.debug.print("\nSECTSTART | ", .{});
+            std.debug.print("{s}", .{b});
+        }
+        //DEBUG
+
         try self.file.?.seekTo(offset);
 
         var bytes_read = buffer.len;
 
         _for: for (0..arr.*.len) |i| {
             bytes_read = try self.file.?.readAll(&buffer);
+            std.debug.print("`{s}`\n", .{buffer});
             if (bytes_read == 0) break :_for;
 
             const eol = if (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{ '\r', '\n' })) |e| e else buffer.len - 2; // -2 to compensate to the + 2 later on
 
             if (eol < 15) { // the shortest possible line you could create is 15 chars long
-                if (bytes_read >= 64) {
-                    std.debug.print("INCOMPLETE BUFFER: {s}\n", .{buffer});
+                if (bytes_read >= buffer.len) {
+                    std.debug.print("ERROR:\n\tall info given: offset:{},size:{}\n", .{ offset, size });
                     return OsuFileIOError.IncompleteFile; // this is only true if we are at the end of a section
                 }
                 continue;
