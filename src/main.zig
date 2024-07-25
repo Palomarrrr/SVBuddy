@@ -14,8 +14,6 @@ const pread = @import("./util/proc_read.zig");
 //=============================================
 // TODO
 //=============================================
-//  * IMPLEMENT VOLUME CHANGES
-//  * FIX THE PROBLEM WITH VALUES 3,4,6,8 DEFAULTING TO 170 - Should be fixed
 //  * ADD KIAI CHECKBOX / AUTO KIAI ON AND OFF | SAME COULD GO FOR VOLUME
 //  * IMPLEMENT SONG PICKER W/ SOME KIND OF FUZZY SEARCH
 //=============================================
@@ -23,6 +21,7 @@ const pread = @import("./util/proc_read.zig");
 //=============================================
 //  * MAKE THIS PROGRAM STORE CHANGES IN A DIFF FORMAT INSTEAD OF THE DUMB FORMAT ITS IN NOW
 //  * SWITCH ALL page_allocator TO GeneralPurposeAllocator or FixedBufferAllocator
+//  * FINISH WINDOWS PROC READER
 //=============================================
 // LAYOUT IDEA
 //=============================================
@@ -37,6 +36,7 @@ var CURR_FILE: ?*osufile.OsuFile = null;
 var OPTION_FLAG: u8 = 0;
 var CURR_FILE_LABEL: ?*capy.Label = null;
 var PREADER: pread.ProcReader = undefined;
+// TODO: This could be done in a smarter way
 const SETTINGS_LOCATIONS = [_]usize{ 5, 6, 7, 8, 9, 10, 12 }; // Edit this when adding more boolean vars to the settings menu
 
 fn undoButton(btn: *capy.Button) anyerror!void {
@@ -319,18 +319,30 @@ pub fn main() !void {
 
     const cont_bez = try capy.column(.{ .name = "13" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Start X" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "Start Y" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End X" }),
-        capy.textField(.{}),
-        capy.label(.{ .alignment = .Left, .text = "End Y" }),
-        capy.textField(.{}),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+            capy.label(.{ .alignment = .Left, .text = "End Time" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Start Value" }),
+            capy.label(.{ .alignment = .Left, .text = "End Value" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
+            capy.label(.{ .alignment = .Left, .text = "Point 1" }),
+            capy.label(.{ .alignment = .Left, .text = "Point 2" }),
+        }),
+        capy.row(.{ .name = "TT", .expand = .Fill }, .{
+            capy.textField(.{}),
+            capy.textField(.{}),
+        }),
         //capy.checkBox(.{ .label = "Bounded Random" }),
     });
 

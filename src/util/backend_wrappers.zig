@@ -12,6 +12,7 @@ const pread = @import("./proc_read.zig");
 pub const BackendError = error{
     SectionConflict,
     SectionDNE,
+    InvalidFormat,
 };
 
 pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
@@ -27,7 +28,6 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         const val2: f32 = try std.fmt.parseFloat(f32, params[4]);
         const val3: f32 = std.fmt.parseFloat(f32, params[5]) catch 0;
         const val4: f32 = std.fmt.parseFloat(f32, params[6]) catch 0;
-        _ = val4;
 
         const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
         const ext_hobj = try target.*.extentsOfSection(start, end, hobj.HitObject);
@@ -103,6 +103,7 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             0 => try sv.linear(tp, val1, val2, bpm[0]),
             1 => try sv.exponential(tp, val1, val2, bpm[0]),
             2 => try sv.sinusoidal(tp, val1, val2, val3, bpm[0]),
+            3 => try sv.bezier(tp, val1, val2, val3, val4, bpm[0]),
             4 => try sv.scaleSection(tp, val1, val2, bpm[0]),
             5 => try sv.volumeLinear(tp, @as(u8, @truncate(@as(u32, @intFromFloat(val1)))), @as(u8, @truncate(@as(u32, @intFromFloat(val2))))),
             else => unreachable,

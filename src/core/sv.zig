@@ -278,43 +278,29 @@ pub fn sinusoidal(sv_arr: []TimingPoint, sv_trough: f32, sv_peak: f32, n_cycles:
         if (sv_arr[i].is_inh == 0) {
             sv_arr[i].value = -100.0 / svBpmAdjust((amp * (math.sin(((2.0 * math.pi) * (@as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(sv_arr.len - 1)))) * n_cycles)) + y_offset), initial_bpm, next_bpm);
         } else {
-            if (initial_bpm > 0) {
-                next_bpm = 60000 / sv_arr[i].value;
-            }
+            if (initial_bpm > 0) next_bpm = 60000 / sv_arr[i].value;
         }
     }
 }
 
-// Cubic Bezier function | NOT WORKING | Need to implement BPM scaling (good luck w/ that shit)
-// IDEA: Maybe just do this the same way you did it before but just
-//       try to match the values from the output to the given points
-//       ... or you could just try to interpolate any missing values
-// Also try to just make this two 2D vectors... I feel like its easier to understand and visualize as that instead of 4 points
-pub fn bezier(sv_arr: []TimingPoint, p1: *[2]f32, p2: *[2]f32, p3: *[2]f32, p4: *[2]f32) !void {
-
-    // Turn the array indexes into 0 -> 1 values
-    p1[0] = p1[0] / @as(f32, @floatFromInt(sv_arr.len));
-    p2[0] = p2[0] / @as(f32, @floatFromInt(sv_arr.len));
-    p3[0] = p3[0] / @as(f32, @floatFromInt(sv_arr.len));
-    p4[0] = p4[0] / @as(f32, @floatFromInt(sv_arr.len));
-
-    // TODO - For some reason this function generates blank values.... Figure out why and fix it
-    std.debug.print("\x1b[31mWARNING: This function is currently NOT WORKING AS INTENDED!!!\nThe outcome may have some invalid values!!!\x1b[0m\n", .{});
-
+// Cubic Bezier function | Not entirely working as intended
+// This needs to have the x value be taken into account too but idk how that'll be done w/o producing blanks in areas
+pub fn bezier(sv_arr: []TimingPoint, start_value: f32, end_value: f32, p1: f32, p2: f32, initial_bpm: f32) !void {
+    var next_bpm: f32 = initial_bpm;
     for (0..sv_arr.len) |i| {
-        const t: f32 = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(sv_arr.len)); // Percentage of the way though the array since we want to scale w/ time
+        if (sv_arr[i].is_inh == 0) {
+            // This shouldnt be percentage through the array... it should be percentage through the time
+            const t: f32 = @as(f32, @floatFromInt(sv_arr[i].time - sv_arr[0].time)) / @as(f32, @floatFromInt(sv_arr[sv_arr.len - 1].time - sv_arr[0].time)); // Percentage of the way we are from (start time) -> (end time)
+            // This should be a value between 0 -> 1
+            //const curr_x: f32 = ((math.pow(f32, (1 - t), 3)) * 0) + ((3 * math.pow(f32, (1 - t), 2) * t) * p2[0]) + ((3 * (1 - t) * math.pow(f32, t, 2)) * p3[0]) + (math.pow(f32, t, 3) * 1);
 
-        // This should be a value between 0 -> 1
-        const curr_x: f32 = ((math.pow(f32, (1 - t), 3)) * p1[0]) + ((3 * math.pow(f32, (1 - t), 2) * t) * p2[0]) + ((3 * (1 - t) * math.pow(f32, t, 2)) * p3[0]) + (math.pow(f32, t, 3) * p4[0]);
+            // This is the SV value
+            const curr_y: f32 = ((math.pow(f32, (1 - t), 3)) * start_value) + ((3 * math.pow(f32, (1 - t), 2) * t) * p1) + ((3 * (1 - t) * math.pow(f32, t, 2)) * p2) + (math.pow(f32, t, 3) * end_value);
 
-        // This is the SV value
-        const curr_y: f32 = ((math.pow(f32, (1 - t), 3)) * p1[1]) + ((3 * math.pow(f32, (1 - t), 2) * t) * p2[1]) + ((3 * (1 - t) * math.pow(f32, t, 2)) * p3[1]) + (math.pow(f32, t, 3) * p4[1]);
-
-        // Inflate the X value from 0 -> 1 to 0 -> (sv_arr.len - 1)
-        const curr_index: u32 = @as(u32, @intFromFloat(@floor(curr_x * @as(f32, @floatFromInt(sv_arr.len)))));
-        //std.debug.print("index: {}\n", .{curr_index});
-
-        sv_arr[curr_index].value = curr_y;
+            sv_arr[i].value = -100.0 / svBpmAdjust(curr_y, initial_bpm, initial_bpm);
+        } else {
+            if (initial_bpm > 0) next_bpm = 60000 / sv_arr[i].value; // This should work properly
+        }
     }
 }
 

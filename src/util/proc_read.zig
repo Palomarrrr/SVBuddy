@@ -94,8 +94,18 @@ pub const ProcReader = struct {
 
                 _ = try cmdline_file.readAll(cmdline_cont);
 
-                self.osu_dir = try std.heap.page_allocator.alloc(u8, cmdline_cont.len - 8); // osu!.exe is 8 chars so subtract that from there
-                @memcpy(self.osu_dir, cmdline_cont[0 .. cmdline_cont.len - 8]);
+                // OK SO PROBLEM THIS ONLY WORKS WHEN NO CMD FLAGS ARE USED
+                //self.osu_dir = try std.heap.page_allocator.alloc(u8, cmdline_cont.len - 8); // osu!.exe is 8 chars so subtract that from there
+                //@memcpy(self.osu_dir, cmdline_cont[0 .. cmdline_cont.len - 8]);
+
+                // That should work better
+                var dirlen: usize = 0;
+                for (cmdline_cont, 0..) |c, i| { // Find the last '/'
+                    if (c == '/') dirlen = i + 1;
+                }
+                self.osu_dir = try std.heap.page_allocator.alloc(u8, dirlen);
+                @memcpy(self.osu_dir, cmdline_cont[0..dirlen]);
+
                 break;
             }
         }
