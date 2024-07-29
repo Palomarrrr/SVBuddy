@@ -8,11 +8,10 @@
 ######
 ---
 ## Building
-The GUI api for this tool is provided by [Capy](https://capy-ui.org/) and currently using the master branch*
+The GUI api for this tool is provided by [Capy](https://capy-ui.org/) and currently using the master branch
 
-*Or at least it was... This will be fixed hopefully soon (probably tomorrow/this week if I can get around to it)
 ######
-**Target Zig Version: zig `0.12.0-dev.3180+83e578a18`**
+**Target Zig Version: zig `0.13.0`/ ([2024.5.0-mach](https://machengine.org/about/nominated-zig/))**
 ######
 If you wish to run the app simply execute in the project directory
 ```sh

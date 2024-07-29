@@ -481,24 +481,23 @@ pub const OsuFile = struct {
         arr.* = if (size != 0) (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), size)) else return //OsuObjErr.NoPointsGiven;
 
         //DEBUG
-        std.debug.print("OFFSET DEBUG:\n", .{});
-        try self.file.?.seekTo(offset - 3);
-
-        var b = [_]u8{0};
-        for (0..20) |i| {
-            _ = try self.file.?.readAll(&b);
-            if (i == 3) std.debug.print("\nSECTSTART | ", .{});
-            std.debug.print("{s}", .{b});
-        }
+        //try self.file.?.seekTo(offset - 3);
+        //var b = [_]u8{0};
+        //for (0..20) |_| {
+        //    _ = try self.file.?.readAll(&b);
+        //    std.debug.print("{s}", .{b});
+        //}
+        //std.debug.print("\n", .{});
         //DEBUG
 
+        // TODO: Ok so this is really weird but I have to call seekTo twice or everything breaks??? try to fix this because it shouldn't happen
+        try self.file.?.seekTo(offset);
         try self.file.?.seekTo(offset);
 
         var bytes_read = buffer.len;
 
         _for: for (0..arr.*.len) |i| {
             bytes_read = try self.file.?.readAll(&buffer);
-            std.debug.print("`{s}`\n", .{buffer});
             if (bytes_read == 0) break :_for;
 
             const eol = if (std.ascii.indexOfIgnoreCase(&buffer, &[_]u8{ '\r', '\n' })) |e| e else buffer.len - 2; // -2 to compensate to the + 2 later on

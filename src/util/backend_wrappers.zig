@@ -22,7 +22,7 @@ const VOLUME_FIELD_LOCATION = [_]u8{ 2, 2, 3, 4 };
 
 pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
     if (opt_targ) |target| {
-        std.debug.print("options:{b}\n", .{params[15][0]});
+        //std.debug.print("options:{b}\n", .{params[15][0]});
 
         // Refresh the file incase any changes were made
         try target.*.refresh();
