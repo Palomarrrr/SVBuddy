@@ -1,15 +1,20 @@
 // "My hope is that this code is so awful I'm never allowed to write UI code again."
+
+//----//
 const std = @import("std");
+const builtin = @import("builtin");
+
+//----//
 const capy = @import("capy");
+
+//----//
 const osufile = @import("./core/osufileio.zig");
 const com = @import("./util/common.zig");
 const wrapper = @import("./util/backend_wrappers.zig");
-const builtin = @import("builtin");
-
-//TMP
-const sv = @import("./core/sv.zig");
-const hobj = @import("./core/hitobj.zig");
 const pread = @import("./util/proc_read.zig");
+
+//----//
+const std_allocator = std.heap.page_allocator;
 
 //=============================================
 // TODO
@@ -20,7 +25,7 @@ const pread = @import("./util/proc_read.zig");
 //  VERY BIG TODO
 //=============================================
 //  * MAKE THIS PROGRAM STORE CHANGES IN A DIFF FORMAT INSTEAD OF THE DUMB FORMAT ITS IN NOW
-//  * SWITCH ALL page_allocator TO GeneralPurposeAllocator or FixedBufferAllocator
+//  * SWITCH ALL page_allocator TO GeneralPurposeAllocator or FixedBufferAllocator | In progress
 //  * FINISH WINDOWS PROC READER
 //=============================================
 // LAYOUT IDEA
@@ -53,12 +58,12 @@ fn preaderBtn(btn: *capy.Button) anyerror!void {
     //defer PREADER.deinit(); //test
     const parent_wgt = btn.*.getParent().?.as(capy.Container);
     var params = [_][]u8{undefined} ** 16;
-    params[15] = try std.heap.page_allocator.alloc(u8, 1);
-    defer for (0..10) |k| std.heap.page_allocator.free(params[k]);
+    params[15] = try std_allocator.alloc(u8, 1);
+    defer for (0..10) |k| std_allocator.free(params[k]);
 
     //const tmp = try wrapper.preadTest(&PREADER); // THIS IS STUPID AND NOT NEEDED
     const beatmap = try PREADER.toStr();
-    defer std.heap.page_allocator.free(beatmap);
+    defer std_allocator.free(beatmap);
 
     var flag: u8 = 0x1;
     for (SETTINGS_LOCATIONS) |l| {
@@ -78,7 +83,7 @@ fn preaderBtn(btn: *capy.Button) anyerror!void {
             else => strlen += 1,
         }
     }
-    params[1] = try std.heap.page_allocator.alloc(u8, strlen);
+    params[1] = try std_allocator.alloc(u8, strlen);
     var i: usize = 0;
     for (beatmap) |c| {
         switch (c) {
@@ -98,7 +103,7 @@ fn preaderBtn(btn: *capy.Button) anyerror!void {
 
     if (CURR_FILE) |fp| {
         // This most likely leaks memory... I can't find a way to fix it...
-        CURR_FILE_LABEL.?.*.text.set(try std.fmt.allocPrintZ(std.heap.page_allocator, "Editing: {s} - {s} | [{s}]", .{ fp.metadata.artist, fp.metadata.title, fp.metadata.version }));
+        CURR_FILE_LABEL.?.*.text.set(try std.fmt.allocPrintZ(std_allocator, "Editing: {s} - {s} | [{s}]", .{ fp.metadata.artist, fp.metadata.title, fp.metadata.version }));
     }
 }
 
@@ -112,9 +117,9 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
 
     // params[0] is always the parent name, params[15] is always the option flag
     var params = [_][]u8{undefined} ** 16;
-    params[15] = try std.heap.page_allocator.alloc(u8, 1);
+    params[15] = try std_allocator.alloc(u8, 1);
     defer {
-        for (0..params.len) |k| std.heap.page_allocator.free(params[k]);
+        for (0..params.len) |k| std_allocator.free(params[k]);
     }
 
     switch (parent_name[0] - '0') {
@@ -130,6 +135,7 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
                 flag <<= 1;
             }
         },
+        // TODO - This isn't needed because I'm just a dumbass
         1 => {
             switch (parent_name[1] - '0') {
                 0, 1, 4, 5 => max = 4,
@@ -154,62 +160,54 @@ fn buttonClick(btn: *capy.Button) anyerror!void {
         else => unreachable,
     }
 
-    params[0] = try std.heap.page_allocator.alloc(u8, parent_name.len);
+    params[0] = try std_allocator.alloc(u8, parent_name.len);
     @memcpy(params[0], parent_name);
 
     params[15][0] = OPTION_FLAG; // This should always be the last param
 
-    // Awful and slow way of doing something simple
-    while (i <= max) : (i += 1) {
+    var curr_widget: ?*capy.Widget = parent_wgt.*.getChildAt(i) catch null;
+
+    // TODO - This could be fixed for the options s.t. we don't have to deal with the stupid shit that is `SETTINGS_LOCATIONS`
+    //        You'd just have to make another function that takes in "params" and spits out a bitflag
+    while (curr_widget != null) : (curr_widget = parent_wgt.*.getChildAt(i) catch null) {
         // I dont really know a faster way of doing this....
-        if ((try parent_wgt.*.getChildAt(i)).is(capy.Label)) {
-            continue; // Skip any labels
-        } else if ((try parent_wgt.*.getChildAt(i)).is(capy.Container)) {
-            const row_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.Container);
+        if (curr_widget) |widget| {
+            if (widget.is(capy.Container)) {
+                const row_wgt = widget.as(capy.Container);
+                for (0..(row_wgt.widget.?.name.get() orelse unreachable).len) |j| {
+                    const text_out = switch ((row_wgt.*.widget.?.name.get() orelse unreachable)[j]) { // This is so ass
+                        'T' => (try row_wgt.*.getChildAt(j)).as(capy.TextField).*.text.get(),
+                        'C' => if ((try row_wgt.*.getChildAt(j)).as(capy.CheckBox).*.checked.get()) @constCast("1") else @constCast("0"),
+                        'L' => continue, // just skip any label fields
+                        else => unreachable,
+                    };
+                    params[p] = try std_allocator.alloc(u8, text_out.len);
+                    @memcpy(params[p], text_out);
+                    p += 1;
+                }
+            } else if (widget.is(capy.CheckBox)) {
+                const cb_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.CheckBox);
 
-            for (0..(row_wgt.widget.?.name.get() orelse unreachable).len) |j| {
-                const text_out = switch ((row_wgt.*.widget.?.name.get() orelse unreachable)[j]) { // This is so ass
-                    'T' => (try row_wgt.*.getChildAt(j)).as(capy.TextField).*.text.get(),
-                    'C' => if ((try row_wgt.*.getChildAt(j)).as(capy.CheckBox).*.checked.get()) @constCast("1") else @constCast("0"),
-                    'L' => continue, // just skip any label fields
-                    else => unreachable,
-                };
-
-                params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
+                const text_out = if (cb_wgt.*.checked.get()) @constCast("1") else @constCast("0"); // Janky... but it works
+                params[p] = try std_allocator.alloc(u8, text_out.len);
+                @memcpy(params[p], text_out);
+                p += 1;
+            } else if (widget.is(capy.TextField)) {
+                const text_out = widget.as(capy.TextField).*.text.get();
+                params[p] = try std_allocator.alloc(u8, text_out.len);
                 @memcpy(params[p], text_out);
                 p += 1;
             }
-        } else if ((try parent_wgt.*.getChildAt(i)).is(capy.CheckBox)) {
-            const cb_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.CheckBox);
-
-            const text_out = if (cb_wgt.*.checked.get()) @constCast("1") else @constCast("0"); // Hopefully this works??
-            params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
-            @memcpy(params[p], text_out);
-            p += 1;
-        } else {
-            const text_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.TextField);
-
-            const text_out = text_wgt.*.text.get();
-            params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
-            @memcpy(params[p], text_out);
-            p += 1;
-        }
+            i += 1;
+        } else break;
     }
-    // Previous implementation
-    //while(i <= max) : (i += 2) {
-    //const text_wgt = (try parent_wgt.*.getChildAt(i)).as(capy.TextField);
-    //const text_out = text_wgt.*.text.get();
-    //params[p] = try std.heap.page_allocator.alloc(u8, text_out.len);
-    //@memcpy(params[p], text_out);
-    //p += 1;
-    //}
 
     switch (parent_name[0] - '0') {
         0 => {
             CURR_FILE = try wrapper.initTargetFile(params);
             if (CURR_FILE) |fp| {
                 // This most likely leaks memory... I can't find a way to fix it...
-                CURR_FILE_LABEL.?.*.text.set(try std.fmt.allocPrintZ(std.heap.page_allocator, "Editing: {s} - {s} | [{s}]", .{ fp.metadata.artist, fp.metadata.title, fp.metadata.version }));
+                CURR_FILE_LABEL.?.*.text.set(try std.fmt.allocPrintZ(std_allocator, "Editing: {s} - {s} | [{s}]", .{ fp.metadata.artist, fp.metadata.title, fp.metadata.version }));
             }
         },
         1 => {
@@ -250,7 +248,7 @@ pub fn main() !void {
             capy.textField(.{}),
             capy.textField(.{}),
         }),
-        capy.row(.{ .name = "LL", .expand = .Fill }, .{ // the name field is just going to be used as a label for what is in the section
+        capy.row(.{ .name = "LL", .expand = .Fill }, .{
             capy.label(.{ .alignment = .Left, .text = "Start Value" }),
             capy.label(.{ .alignment = .Left, .text = "End Value" }),
         }),
@@ -258,14 +256,11 @@ pub fn main() !void {
             capy.textField(.{}),
             capy.textField(.{}),
         }),
-        //capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-        //capy.textField(.{}),
-        //capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        //capy.textField(.{}),
-        //capy.label(.{ .alignment = .Left, .text = "Start Value" }),
-        //capy.textField(.{}),
-        //capy.label(.{ .alignment = .Left, .text = "End Value" }),
-        //capy.textField(.{}),
+        capy.label(.{ .alignment = .Left, .text = "Volume" }),
+        capy.textField(.{ .text = "100" }),
+        capy.checkBox(.{ .label = "Kiai" }),
+
+        // TBI
         //capy.checkBox(.{ .label = "Bounded Random" }),
         //capy.label(.{ .alignment = .Left, .text = "Variance" }),
         //capy.textField(.{ .readOnly = true }),
@@ -289,7 +284,9 @@ pub fn main() !void {
             capy.textField(.{}),
             capy.textField(.{}),
         }),
-        //capy.checkBox(.{ .label = "Bounded Random" }),
+        capy.label(.{ .alignment = .Left, .text = "Volume" }),
+        capy.textField(.{ .text = "100" }),
+        capy.checkBox(.{ .label = "Kiai" }),
     });
 
     const cont_sin = try capy.column(.{ .name = "12" }, .{
@@ -312,9 +309,9 @@ pub fn main() !void {
         }),
         capy.label(.{ .alignment = .Left, .text = "Cycles" }),
         capy.textField(.{}),
-        //capy.label(.{ .alignment = .Left, .text = "Cycles" }),
-        //capy.textField(.{}),
-        //capy.checkBox(.{ .label = "Bounded Random" }),
+        capy.label(.{ .alignment = .Left, .text = "Volume" }),
+        capy.textField(.{ .text = "100" }),
+        capy.checkBox(.{ .label = "Kiai" }),
     });
 
     const cont_bez = try capy.column(.{ .name = "13" }, .{
@@ -343,7 +340,9 @@ pub fn main() !void {
             capy.textField(.{}),
             capy.textField(.{}),
         }),
-        //capy.checkBox(.{ .label = "Bounded Random" }),
+        capy.label(.{ .alignment = .Left, .text = "Volume" }),
+        capy.textField(.{ .text = "100" }),
+        capy.checkBox(.{ .label = "Kiai" }),
     });
 
     const cont_adj = try capy.column(.{ .name = "14" }, .{

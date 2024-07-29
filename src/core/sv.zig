@@ -52,13 +52,13 @@ pub const TimingPoint = struct {
         // I HATE THIS SHIT AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
         // Basically this is a stupid check to see if theres a \n at the beginning of a line because I'm an incompetent piece of shit....
         const chk = if (ascii.indexOfIgnoreCase(str, &[_]u8{'\n'})) |ret| ret else return TimingPointError.IncompleteLine;
-        std.debug.print("EOL:{},CHK:{}\n", .{ eol, chk });
+        //std.debug.print("EOL:{},CHK:{}\n", .{ eol, chk });
         if (eol + 1 != chk) last += 1;
 
-        std.debug.print("FROMSTR\n", .{});
+        //std.debug.print("FROMSTR\n", .{});
         while (field < 7) : (field += 1) {
             const ind = ascii.indexOfIgnoreCasePos(str, last, &[_]u8{','}) orelse return TimingPointError.IncompleteLine;
-            std.debug.print("field: `{s}`\n", .{str[last..ind]});
+            //std.debug.print("field: `{s}`\n", .{str[last..ind]});
             switch (field) {
                 0 => {
                     self.time = try fmt.parseInt(i32, str[last..ind], 10);
@@ -87,7 +87,7 @@ pub const TimingPoint = struct {
             }
             last = ind + 1;
         }
-        std.debug.print("FROMSTR END\n", .{});
+        //std.debug.print("FROMSTR END\n", .{});
         //std.debug.print("final: `{s}`\n", .{str[last..eol]});
         self.effects = try fmt.parseUnsigned(u8, str[last..eol], 10);
         //std.debug.print("Finished line\n", .{});
@@ -123,7 +123,7 @@ inline fn svBpmAdjust(sv: f32, bpm_old: f32, bpm_new: f32) f32 {
 
 // TODO: TEST IF KEEP_PREVIOUS WORKS
 //       ALSO FUCKING CLEAN THIS
-pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, start: i32, end: i32, snap: u16, bpm: f32, keep_previous: bool) !void {
+pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, start: i32, end: i32, snap: u16, bpm: f32, keep_previous: bool, volume: u8, effects: u8) !void {
     if (obj_arr) |hobj_arr| { // If we are putting sv over a section with hitobjs
 
         if (!keep_previous) {
@@ -139,8 +139,8 @@ pub fn createNewSVSection(sv_arr: *[]TimingPoint, obj_arr: ?[]hitobj.HitObject, 
                 //sv_arr.*[i].value = 1.0;
                 sv_arr.*[i].meter = 4.0;
                 sv_arr.*[i].sample_set = 1;
-                sv_arr.*[i].volume = 100;
-                sv_arr.*[i].effects = 0;
+                sv_arr.*[i].volume = volume;
+                sv_arr.*[i].effects = effects;
                 sv_arr.*[i].is_inh = 0;
             }
         }

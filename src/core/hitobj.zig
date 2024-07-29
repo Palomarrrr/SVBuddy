@@ -92,7 +92,7 @@ pub const HitObject = struct {
 
         //std.debug.print("finding diffs\n", .{});
         for (list_of_snappings, 0..list_of_snappings.len) |s, i| {
-            std.debug.print("i={}\n", .{i});
+            //std.debug.print("i={}\n", .{i});
             const time_per_snap: f32 = time_per_measure / @as(f32, @floatFromInt(s));
             const muliplier: i32 = @intFromFloat(@round(@as(f32, @floatFromInt(self.time)) / time_per_snap));
             diffs[i] = self.time - @as(i32, @intFromFloat(@round(@as(f32, @floatFromInt(muliplier)) * time_per_snap)));

@@ -131,7 +131,7 @@ pub fn linear60kBarline(sv_arr: *[]sv.TimingPoint, bl_start: f32, bl_end: f32, t
     var curr_bl: f32 = bl_start;
     var curr_time: i32 = sv_arr.*[0].time;
     const inc: i32 = @as(i32, @intFromFloat(sv_arr.*[sv_arr.*.len - 1].value / @as(f32, @floatFromInt(effect_snapping)))); // This is producing zero for some reason
-    std.debug.print("inc:{},snap:{},value:{}\n", .{ inc, effect_snapping, sv_arr.*[sv_arr.*.len - 1].value });
+    //std.debug.print("inc:{},snap:{},value:{}\n", .{ inc, effect_snapping, sv_arr.*[sv_arr.*.len - 1].value });
     const n_pts: u32 = @intCast(@divTrunc((sv_arr.*[sv_arr.*.len - 1].time - sv_arr.*[0].time), inc));
     const bl_slope = ((bl_end - bl_start) / @as(f32, @floatFromInt(n_pts)));
 
@@ -176,7 +176,7 @@ pub fn linear60kMeter(sv_arr: *[]sv.TimingPoint, meter_start: u16, meter_end: u1
             if (sv_arr.*[i - 1].time != sv_arr.*[i].time) n_pts += 1; // If no point exists on it
         }
     }
-    std.debug.print("n_pts: {}\n", .{n_pts});
+    //std.debug.print("n_pts: {}\n", .{n_pts});
 
     const meter_slope: f32 = (@as(f32, @floatFromInt(meter_end)) - @as(f32, @floatFromInt(meter_start))) / @as(f32, @floatFromInt(sv_arr.*[sv_arr.*.len - 2].time - sv_arr.*[0].time)); // Potentially dangerous
 
@@ -184,9 +184,9 @@ pub fn linear60kMeter(sv_arr: *[]sv.TimingPoint, meter_start: u16, meter_end: u1
         for (sv_arr.*.len, 0..) |_, i| {
             if (sv_arr.*[i].is_inh == 1 and sv_arr.*[i].value == 1) {
                 sv_arr.*[i].meter = @as(u16, @intFromFloat((meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))) + @as(f32, @floatFromInt(meter_start))));
-                std.debug.print("made meter: {}\n", .{sv_arr.*[i].meter});
-                std.debug.print("{d:.2} * {} - {} = {d:.2}\n", .{ meter_slope, sv_arr.*[i].time, sv_arr.*[0].time, (meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))) });
-                std.debug.print("{d:.2} + {} = {d:.2} -> {}\n", .{ (meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))), meter_start, (meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))) + @as(f32, @floatFromInt(meter_start)), @as(u16, @intFromFloat((meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))) + @as(f32, @floatFromInt(meter_start)))) });
+                //std.debug.print("made meter: {}\n", .{sv_arr.*[i].meter});
+                //std.debug.print("{d:.2} * {} - {} = {d:.2}\n", .{ meter_slope, sv_arr.*[i].time, sv_arr.*[0].time, (meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))) });
+                //std.debug.print("{d:.2} + {} = {d:.2} -> {}\n", .{ (meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))), meter_start, (meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))) + @as(f32, @floatFromInt(meter_start)), @as(u16, @intFromFloat((meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))) + @as(f32, @floatFromInt(meter_start)))) });
             }
         }
     }
@@ -203,7 +203,7 @@ pub fn linear60kMeter(sv_arr: *[]sv.TimingPoint, meter_start: u16, meter_end: u1
         if (sv_arr.*[i].is_inh == 0) { // If greenline
             if (sv_arr.*[i - 1].time != sv_arr.*[i].time) { // If no point exists on it
                 curr_meter = (meter_slope * @as(f32, @floatFromInt(sv_arr.*[i].time - sv_arr.*[0].time))) + @as(f32, @floatFromInt(meter_start));
-                std.debug.print("curr_meter = {d:.2}\n", .{curr_meter}); // DBG
+                //std.debug.print("curr_meter = {d:.2}\n", .{curr_meter}); // DBG
                 new_sv_arr[idx] = sv.TimingPoint{
                     .time = sv_arr.*[i].time,
                     .value = 1.0,

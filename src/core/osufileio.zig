@@ -229,31 +229,31 @@ pub const OsuFile = struct {
         if (retval[0] == 0) retval[0] = try self.findEndOfSectionOffset(self.section_offsets[m] + 1); // Same w/ start
 
         // DEBUG
-        try self.file.?.seekTo(retval[0] - 3);
-        std.debug.print("START:{}:", .{retval[0]});
-        for (0..20) |_| {
-            var b = [_]u8{0};
-            _ = try self.file.?.read(&b);
-            if (b[0] > 32) {
-                std.debug.print("{c}", .{b[0]});
-            } else {
-                std.debug.print("`_{}`", .{b[0]});
-            }
-        }
-        std.debug.print("\n", .{});
+        //try self.file.?.seekTo(retval[0] - 3);
+        //std.debug.print("START:{}:", .{retval[0]});
+        //for (0..20) |_| {
+        //    var b = [_]u8{0};
+        //    _ = try self.file.?.read(&b);
+        //    if (b[0] > 32) {
+        //        std.debug.print("{c}", .{b[0]});
+        //    } else {
+        //        std.debug.print("`_{}`", .{b[0]});
+        //    }
+        //}
+        //std.debug.print("\n", .{});
 
-        try self.file.?.seekTo(retval[1] - 3);
-        std.debug.print("END:{}:", .{retval[1]});
-        for (0..20) |_| {
-            var b = [_]u8{0};
-            _ = try self.file.?.read(&b);
-            if (b[0] > 32) {
-                std.debug.print("{c}", .{b[0]});
-            } else {
-                std.debug.print("`_{}`", .{b[0]});
-            }
-        }
-        std.debug.print("\n", .{});
+        //try self.file.?.seekTo(retval[1] - 3);
+        //std.debug.print("END:{}:", .{retval[1]});
+        //for (0..20) |_| {
+        //    var b = [_]u8{0};
+        //    _ = try self.file.?.read(&b);
+        //    if (b[0] > 32) {
+        //        std.debug.print("{c}", .{b[0]});
+        //    } else {
+        //        std.debug.print("`_{}`", .{b[0]});
+        //    }
+        //}
+        //std.debug.print("\n", .{});
         //DEBUG
 
         try self.file.?.seekTo(self.curr_offsets[m]); // Move the cursor back to where it was last
@@ -319,7 +319,7 @@ pub const OsuFile = struct {
             }
             fields += 1;
         }
-        std.debug.print("bpm got: `{s}`{s}` | full: {s}\n", .{ buffer[bpmoffset[0]..bpmoffset[1]], buffer[0 .. bpmoffset[0] - 1], buffer });
+        //std.debug.print("bpm got: `{s}`{s}` | full: {s}\n", .{ buffer[bpmoffset[0]..bpmoffset[1]], buffer[0 .. bpmoffset[0] - 1], buffer });
         return [2]f32{ 60000.0 / try fmt.parseFloat(f32, buffer[bpmoffset[0]..bpmoffset[1]]), try fmt.parseFloat(f32, buffer[0 .. bpmoffset[0] - 1]) };
     }
 

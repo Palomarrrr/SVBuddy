@@ -10,10 +10,15 @@ const timing = @import("../core/timing.zig");
 const pread = @import("./proc_read.zig");
 
 pub const BackendError = error{
+    EffectDeprecated,
     SectionConflict,
     SectionDNE,
     InvalidFormat,
 };
+
+// Shitty temp fix just to get this feature working
+// TODO - Find a better way of knowing where the volume and kiai fields will be
+const VOLUME_FIELD_LOCATION = [_]u8{ 2, 2, 3, 4 };
 
 pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
     if (opt_targ) |target| {
@@ -24,14 +29,21 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 
         const start: i32 = try timing.timeStrToTick(params[1]);
         const end: i32 = try timing.timeStrToTick(params[2]);
-        const val1: f32 = try std.fmt.parseFloat(f32, params[3]);
-        const val2: f32 = try std.fmt.parseFloat(f32, params[4]);
-        const val3: f32 = std.fmt.parseFloat(f32, params[5]) catch 0;
-        const val4: f32 = std.fmt.parseFloat(f32, params[6]) catch 0;
+        var arg = [_]f32{0} ** 6;
+
+        arg[0] = try std.fmt.parseFloat(f32, params[3]);
+        arg[1] = try std.fmt.parseFloat(f32, params[4]);
+        arg[2] = std.fmt.parseFloat(f32, params[5]) catch 0.0;
+        arg[3] = std.fmt.parseFloat(f32, params[6]) catch 0.0;
+        arg[4] = std.fmt.parseFloat(f32, params[7]) catch 0.0;
+        arg[5] = std.fmt.parseFloat(f32, params[8]) catch 0.0;
+
+        const vol_location: usize = VOLUME_FIELD_LOCATION[params[0][1] - '0'];
+        const vol: u8 = @intFromFloat(arg[vol_location]);
+        const effect: u8 = @intFromFloat(arg[vol_location + 1]);
 
         const ext_tp = try target.*.extentsOfSection(start, end, sv.TimingPoint);
         const ext_hobj = try target.*.extentsOfSection(start, end, hobj.HitObject);
-        //std.debug.print("Found section extents: {any} | {any}\n", .{ ext_tp, ext_hobj });
 
         const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
         var tp = try com.create(sv.TimingPoint);
@@ -49,12 +61,11 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             const keep_prev: bool = !((params[15][0] & 0x4) == 1);
 
             if (ext_hobj[2] == 0 or (params[15][0] & 0x1) == 0) { // If no hit objs
-                std.debug.print("LOG: HOBJ = 0\n", .{});
-                try sv.createNewSVSection(&tp, null, start, end, 12, bpm[0], keep_prev); // TODO: ADD SNAPPING
+                try sv.createNewSVSection(&tp, null, start, end, 12, bpm[0], keep_prev, vol, effect); // TODO: ADD SNAPPING
             } else {
                 //if (params[15][0] & 0x1 == 1) try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs); // Check if we even want to snap things to the notes
                 try target.loadObjArr(ext_hobj[0], ext_hobj[2], &hobjs); // TODO: Make sure this works the same (it should in theory)
-                try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm[0], keep_prev);
+                try sv.createNewSVSection(&tp, hobjs, start, end, 12, bpm[0], keep_prev, vol, effect);
             }
 
             if (ext_tp[2] != 0 and (params[15][0] & 0x4) == 0) { // If points existed previously | this is only important if we have uninherited timing points
@@ -100,12 +111,12 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 
         // Apply the effect
         switch (params[0][1] - '0') {
-            0 => try sv.linear(tp, val1, val2, bpm[0]),
-            1 => try sv.exponential(tp, val1, val2, bpm[0]),
-            2 => try sv.sinusoidal(tp, val1, val2, val3, bpm[0]),
-            3 => try sv.bezier(tp, val1, val2, val3, val4, bpm[0]),
-            4 => try sv.scaleSection(tp, val1, val2, bpm[0]),
-            5 => try sv.volumeLinear(tp, @as(u8, @truncate(@as(u32, @intFromFloat(val1)))), @as(u8, @truncate(@as(u32, @intFromFloat(val2))))),
+            0 => try sv.linear(tp, arg[0], arg[1], bpm[0]),
+            1 => try sv.exponential(tp, arg[0], arg[1], bpm[0]),
+            2 => try sv.sinusoidal(tp, arg[0], arg[1], arg[2], bpm[0]),
+            3 => try sv.bezier(tp, arg[0], arg[1], arg[2], arg[3], bpm[0]),
+            4 => try sv.scaleSection(tp, arg[0], arg[1], bpm[0]),
+            5 => try sv.volumeLinear(tp, @as(u8, @truncate(@as(u32, @intFromFloat(arg[0])))), @as(u8, @truncate(@as(u32, @intFromFloat(arg[1]))))),
             else => unreachable,
         }
 
@@ -191,12 +202,11 @@ pub fn applyBarlineFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
                 tp_out = try bl.staticRandomBarlines(bpm[0], start, end, chance, val1, val2);
             },
             1 => {
-                return BackendError.SectionConflict; // Irrelivant after blcreator exists
+                return BackendError.EffectDeprecated; // Irrelivant after blcreator exists
                 //const res: u8 = @as(u8, @intFromFloat(val3));
                 //tp_out = try bl.linear60kBarline(bpm[0], start, end, val1, val2, 1920, res);
             },
             2 => {
-
                 // Set up opts
                 var opts: u8 = 0;
                 opts |= @as(u8, @intFromFloat(val8)); // Escape notes in this section
@@ -222,7 +232,7 @@ pub fn applyBarlineFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 }
 
 pub fn initTargetFile(params: anytype) !?*osufile.OsuFile {
-    std.debug.print("inittfile\n{s}\n", .{params[1]});
+    std.debug.print("LOG: Initializing file: `{s}`\n", .{params[1]});
     const retval: *osufile.OsuFile = try std.heap.page_allocator.create(osufile.OsuFile);
     try retval.*.init(params[1]);
     if (params[15][0] & 0x40 != 0) {
@@ -286,7 +296,7 @@ pub fn undoLast(opt_targ: ?*osufile.OsuFile, direction: undo.Direction) !void {
                     cur_inv_node = cur_inv_node.*.linked orelse unreachable; // This was literally just fucking declared... please
                 } else break;
             }
-            std.debug.print("Pushing node in the {any} direction!\n", .{opposite_dir});
+            std.debug.print("LOG: Pushing node in the {any} direction!\n", .{opposite_dir});
             undo.push(inverse_node, opposite_dir);
         } else return undo.UndoError.EndOfStack;
     } else return osufile.OsuFileIOError.FileDNE;
