@@ -305,6 +305,7 @@ pub const ProcReader = switch (builtin.os.tag) {
     .windows => struct {
         // This shit is basically a fuckin port from cosutrainer... I have zero clue how windows works and this makes me want to super die
         osu_dir: win.LPWSTR,
+        osu_dir_len: usize,
         mem_file: std.fs.File,
         map_file: std.fs.File,
 
@@ -389,12 +390,22 @@ pub const ProcReader = switch (builtin.os.tag) {
             for (path, 0..) |c, i| { // Copy over
                 self.osu_dir[i] = c;
             }
+            self.osu_dir_len = path.len;
+
+            // TEST IF I CAN JUST USE THIS SHIT TO INITIALIZE u16 ARRAYS
+            const testv: *const []u16 = @alignCast(@ptrCast("balls"));
+            std.debug.print("TEST:{any}\n", .{testv});
 
             // I believe I can free `path` since its not being used anymore but we'll see about it
         }
 
         pub fn getOsuSongsPath(self: *ProcReader) !void {
             _ = self;
+            const size: usize = 128; // I don't know how do to GetUserName in zig without having to use imported C... so here we go
+            // So we do this the slow and unreliable way
+            const uname: [*:0]u16 = try std.heap.page_allocator.allocSentinel(win.WCHAR, size, 0);
+            _ = try win.GetEnvironmentVariableW(@constCast(@alignCast(@ptrCast("$Env:Username"))), uname, size); // Nightmare casting
+
         }
 
         pub fn memReadInit(self: *ProcReader) !void {
@@ -427,6 +438,7 @@ pub const ProcReader = switch (builtin.os.tag) {
 
         pub fn toStr(self: *ProcReader) ![]u8 { // Just a test fn
             try self.findOsuProc();
+            try self.getOsuSongsPath();
             return ProcReadErr.OsuProcDNE;
         }
     },
