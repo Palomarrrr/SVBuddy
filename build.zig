@@ -3,7 +3,7 @@ const build_capy = @import("capy");
 
 // Note to self
 // | to build for x86 windows
-// | `zig build --host-target x86_64-windows`
+// | `zig build --Dtarget"x86_64-windows"`
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
