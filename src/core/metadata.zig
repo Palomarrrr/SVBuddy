@@ -1,5 +1,8 @@
 const std = @import("std");
 const osufile = @import("./osufileio.zig");
+const com = @import("../util/common.zig");
+
+const std_allocator = com.std_allocator;
 
 const MetadataSectionErr = error{
     InvalidField,
@@ -34,35 +37,35 @@ pub const Metadata = struct {
                 '\n' => {
                     switch (field) {
                         0 => {
-                            self.title = try std.heap.page_allocator.alloc(u8, i_buf);
+                            self.title = try std_allocator.alloc(u8, i_buf);
                             @memcpy(self.title, buffer[0..i_buf]);
                         },
                         1 => {
-                            self.title_unicode = try std.heap.page_allocator.alloc(u8, i_buf);
+                            self.title_unicode = try std_allocator.alloc(u8, i_buf);
                             @memcpy(self.title_unicode, buffer[0..i_buf]);
                         },
                         2 => {
-                            self.artist = try std.heap.page_allocator.alloc(u8, i_buf);
+                            self.artist = try std_allocator.alloc(u8, i_buf);
                             @memcpy(self.artist, buffer[0..i_buf]);
                         },
                         3 => {
-                            self.artist_unicode = try std.heap.page_allocator.alloc(u8, i_buf);
+                            self.artist_unicode = try std_allocator.alloc(u8, i_buf);
                             @memcpy(self.artist_unicode, buffer[0..i_buf]);
                         },
                         4 => {
-                            self.creator = try std.heap.page_allocator.alloc(u8, i_buf);
+                            self.creator = try std_allocator.alloc(u8, i_buf);
                             @memcpy(self.creator, buffer[0..i_buf]);
                         },
                         5 => {
-                            self.version = try std.heap.page_allocator.alloc(u8, i_buf);
+                            self.version = try std_allocator.alloc(u8, i_buf);
                             @memcpy(self.version, buffer[0..i_buf]);
                         },
                         6 => {
-                            self.source = try std.heap.page_allocator.alloc(u8, i_buf);
+                            self.source = try std_allocator.alloc(u8, i_buf);
                             @memcpy(self.source, buffer[0..i_buf]);
                         },
                         7 => { // TODO: SEE TAGS FIELD
-                            self.tags = try std.heap.page_allocator.alloc(u8, i_buf);
+                            self.tags = try std_allocator.alloc(u8, i_buf);
                             @memcpy(self.tags, buffer[0..i_buf]);
                         },
                         8 => {
@@ -97,14 +100,14 @@ pub const Metadata = struct {
     }
 
     pub fn deinit(self: *Metadata) void {
-        std.heap.page_allocator.free(self.title);
-        std.heap.page_allocator.free(self.title_unicode);
-        std.heap.page_allocator.free(self.artist);
-        std.heap.page_allocator.free(self.artist_unicode);
-        std.heap.page_allocator.free(self.creator);
-        std.heap.page_allocator.free(self.version);
-        std.heap.page_allocator.free(self.source);
-        std.heap.page_allocator.free(self.tags); // FIXME: idk if this works
+        std_allocator.free(self.title);
+        std_allocator.free(self.title_unicode);
+        std_allocator.free(self.artist);
+        std_allocator.free(self.artist_unicode);
+        std_allocator.free(self.creator);
+        std_allocator.free(self.version);
+        std_allocator.free(self.source);
+        std_allocator.free(self.tags); // FIXME: idk if this works
     }
 
     pub fn genBackupVerName(self: *Metadata) ![]u8 {
@@ -117,9 +120,9 @@ pub const Metadata = struct {
         const month = day.calculateYearDay().calculateMonthDay().month;
         const year = day.calculateYearDay().year;
         const day_of_month = day.calculateYearDay().calculateMonthDay().day_index;
-        const fmtstr = try std.fmt.allocPrint(std.heap.page_allocator, "{d:0>2}{d:0>2}{d:0>2}{d:0>2}{d:0>2}{d:0>2}", .{ year, month.numeric(), day_of_month, hms.getHoursIntoDay(), hms.getMinutesIntoHour(), hms.getSecondsIntoMinute() });
+        const fmtstr = try std.fmt.allocPrint(std_allocator, "{d:0>2}{d:0>2}{d:0>2}{d:0>2}{d:0>2}{d:0>2}", .{ year, month.numeric(), day_of_month, hms.getHoursIntoDay(), hms.getMinutesIntoHour(), hms.getSecondsIntoMinute() });
 
-        return try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("b-"), fmtstr, @constCast("-"), self.version });
+        return try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("b-"), fmtstr, @constCast("-"), self.version });
     }
 
     pub fn genBackupFileName(self: *Metadata) ![]u8 {
@@ -131,9 +134,9 @@ pub const Metadata = struct {
             }
         }
 
-        var artist: []u8 = try std.heap.page_allocator.alloc(u8, l);
+        var artist: []u8 = try std_allocator.alloc(u8, l);
         l = 0;
-        defer std.heap.page_allocator.free(artist);
+        defer std_allocator.free(artist);
 
         for (self.artist) |c| {
             switch (c) {
@@ -145,6 +148,6 @@ pub const Metadata = struct {
             }
         }
 
-        return try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ artist, @constCast(" - "), self.title, @constCast(" ("), self.creator, @constCast(") ["), try self.genBackupVerName(), @constCast("].osu") }); // Hellfire and brimstone
+        return try std.mem.concat(std_allocator, u8, &[_][]u8{ artist, @constCast(" - "), self.title, @constCast(" ("), self.creator, @constCast(") ["), try self.genBackupVerName(), @constCast("].osu") }); // Hellfire and brimstone
     }
 };

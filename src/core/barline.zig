@@ -3,6 +3,8 @@ const sv = @import("./sv.zig");
 const osufile = @import("./osufileio.zig");
 const com = @import("../util/common.zig");
 
+const std_allocator = com.std_allocator;
+
 pub const BarlineError = error{
     InvalidTimeRange,
 };
@@ -29,7 +31,7 @@ inline fn randomBPMBarline(time: i32, min_bpm: f32, max_bpm: f32, rand: std.Rand
 
 // Generates between two static bounds
 pub fn staticRandomBarlines(start_bpm: f32, start_time: i32, end_time: i32, percent_chance: u8, min_bpm: f32, max_bpm: f32) ![]sv.TimingPoint {
-    var tp = try std.heap.page_allocator.alloc(sv.TimingPoint, 1); // This is going to be fucking awful
+    var tp = try std_allocator.alloc(sv.TimingPoint, 1); // This is going to be fucking awful
     tp[0] = sv.TimingPoint{ // Make an initial point
         .time = start_time,
         .value = (60000.0 / ((max_bpm + min_bpm) / 2)),
@@ -45,13 +47,13 @@ pub fn staticRandomBarlines(start_bpm: f32, start_time: i32, end_time: i32, perc
     for (0..dist_time) |t| {
         const line_roll: u8 = std.Random.uintAtMost(rand.random(), u8, 100);
         if (line_roll <= percent_chance) {
-            tp = try std.heap.page_allocator.realloc(tp, tp.len + 1);
+            tp = try std_allocator.realloc(tp, tp.len + 1);
             tp[tp.len - 1] = randomBPMBarline(start_time + @as(i32, @intCast(t)), min_bpm, max_bpm, rand.random());
         }
     }
 
     // Create a cap on the end to make sure this isn't fucking up things after the section
-    tp = try std.heap.page_allocator.realloc(tp, tp.len + 1);
+    tp = try std_allocator.realloc(tp, tp.len + 1);
     tp[0] = sv.TimingPoint{ // Make an initial point
         .time = end_time,
         .value = (60000 / start_bpm),
@@ -73,7 +75,7 @@ pub fn staticRandomBarlines(start_bpm: f32, start_time: i32, end_time: i32, perc
 // Just to reduce some repetitive shit
 // This might introduce more problems than not since id have to move the contents of tp[1] to the end of whatever im generating
 pub fn create60kSection(start_bpm: f32, start_time: i32, end_time: i32, opts: u8) ![]sv.TimingPoint { // This returns an optional somehow??
-    var tp = try std.heap.page_allocator.alloc(sv.TimingPoint, 2);
+    var tp = try std_allocator.alloc(sv.TimingPoint, 2);
     tp[0] = sv.TimingPoint{ // Make an initial point
         .time = start_time,
         .value = 1,
@@ -96,7 +98,7 @@ pub fn create60kSection(start_bpm: f32, start_time: i32, end_time: i32, opts: u8
 }
 
 pub fn static60kBarline(sv_arr: *[]sv.TimingPoint, time: i32, bl_dist: f32, target_hres: f32) !void {
-    sv_arr.* = try std.heap.page_allocator.realloc(sv_arr.*, sv_arr.*.len + 1); // Allocate for new points
+    sv_arr.* = try std_allocator.realloc(sv_arr.*, sv_arr.*.len + 1); // Allocate for new points
     sv_arr.*[sv_arr.*.len - 1] = sv_arr.*[sv_arr.*.len - 2]; // Move the end back
 
     // Im pretty sure this potentially not being sorted shouldnt cause any problems... but im not 100% sure
@@ -135,7 +137,7 @@ pub fn linear60kBarline(sv_arr: *[]sv.TimingPoint, bl_start: f32, bl_end: f32, t
     const n_pts: u32 = @intCast(@divTrunc((sv_arr.*[sv_arr.*.len - 1].time - sv_arr.*[0].time), inc));
     const bl_slope = ((bl_end - bl_start) / @as(f32, @floatFromInt(n_pts)));
 
-    sv_arr.* = try std.heap.page_allocator.realloc(sv_arr.*, n_pts + 2);
+    sv_arr.* = try std_allocator.realloc(sv_arr.*, n_pts + 2);
 
     sv_arr.*[sv_arr.*.len - 1] = sv_arr.*[1]; // Im just going to go ahead and assume that this is where the end point is
 
@@ -193,8 +195,8 @@ pub fn linear60kMeter(sv_arr: *[]sv.TimingPoint, meter_start: u16, meter_end: u1
     if (n_existing_60ks == n_pts) return; // If we don't need to continue... don't...
 
     // Allocate for a new sv array
-    var new_sv_arr: []sv.TimingPoint = try std.heap.page_allocator.alloc(sv.TimingPoint, n_pts - n_existing_60ks); // Only allocate for the points we need
-    defer (std.heap.page_allocator.free(new_sv_arr));
+    var new_sv_arr: []sv.TimingPoint = try std_allocator.alloc(sv.TimingPoint, n_pts - n_existing_60ks); // Only allocate for the points we need
+    defer (std_allocator.free(new_sv_arr));
     var idx: usize = 0; // holds index of new_sv_arr
     var curr_meter: f32 = @as(f32, @floatFromInt(meter_start));
 

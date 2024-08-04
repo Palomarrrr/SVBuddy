@@ -9,6 +9,8 @@ const osufile = @import("../core/osufileio.zig");
 const timing = @import("../core/timing.zig");
 const pread = @import("./proc_read.zig");
 
+const std_allocator = com.std_allocator;
+
 pub const BackendError = error{
     EffectDeprecated,
     SectionConflict,
@@ -47,17 +49,17 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 
         const bpm = try target.*.findSectionInitialBPM(ext_tp[0]);
         var tp = try com.create(sv.TimingPoint);
-        defer std.heap.page_allocator.free(tp);
+        defer std_allocator.free(tp);
 
         // Create undo entry
         var bck = try com.create(sv.TimingPoint);
-        defer std.heap.page_allocator.free(bck);
+        defer std_allocator.free(bck);
         _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &bck);
         try createUndo(start, end, bck, false);
 
         if (params[0][1] != '4' and params[0][1] != '5') { // Janky fix to make sure that we aren't generating sv when adjusting an old section
             var hobjs = try com.create(hobj.HitObject);
-            defer std.heap.page_allocator.free(hobjs);
+            defer std_allocator.free(hobjs);
             const keep_prev: bool = !((params[15][0] & 0x4) == 1);
 
             if (ext_hobj[2] == 0 or (params[15][0] & 0x1) == 0) { // If no hit objs
@@ -71,14 +73,14 @@ pub fn applySVFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
             if (ext_tp[2] != 0 and (params[15][0] & 0x4) == 0) { // If points existed previously | this is only important if we have uninherited timing points
                 var tp2 = try com.create(sv.TimingPoint);
                 _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tp2);
-                defer std.heap.page_allocator.free(tp2);
+                defer std_allocator.free(tp2);
 
                 const n_inh = sv.getNumInherited(tp2);
                 const n_uinh = tp2.len - n_inh;
 
                 if (n_uinh != 0) { // if there are uninherited points in the section
-                    var uinh = if (params[15][0] & 0x8 != 0) try std.heap.page_allocator.alloc(sv.TimingPoint, n_uinh * 2) else try std.heap.page_allocator.alloc(sv.TimingPoint, n_uinh); // build an array w/ only uninherited
-                    //defer std.heap.page_allocator.free(uinh); // TODO: CHECK IF THIS FUCKS THINGS
+                    var uinh = if (params[15][0] & 0x8 != 0) try std_allocator.alloc(sv.TimingPoint, n_uinh * 2) else try std_allocator.alloc(sv.TimingPoint, n_uinh); // build an array w/ only uninherited
+                    //defer std_allocator.free(uinh); // TODO: CHECK IF THIS FUCKS THINGS
                     var i: usize = 0;
                     for (tp2) |p| {
                         if (p.is_inh == 1) {
@@ -144,8 +146,8 @@ pub fn applyHObjFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 
         var tps = try com.create(sv.TimingPoint);
         var hobjs = try com.create(hobj.HitObject);
-        //defer std.heap.page_allocator.free(tps);
-        defer std.heap.page_allocator.free(hobjs);
+        //defer std_allocator.free(tps);
+        defer std_allocator.free(hobjs);
 
         if (ext_tp[2] != 0) _ = try target.loadObjArr(ext_tp[0], ext_tp[2], &tps);
 
@@ -189,7 +191,7 @@ pub fn applyBarlineFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
         try createUndo(start, end, bck, false); // TESTING
 
         const tps = try com.create(sv.TimingPoint);
-        defer std.heap.page_allocator.free(tps);
+        defer std_allocator.free(tps);
 
         //if (ext_tp[2] != 0) return BackendError.SectionConflict; // Either remove this or only make it trigger on a different case
 
@@ -233,18 +235,18 @@ pub fn applyBarlineFn(opt_targ: ?*osufile.OsuFile, params: anytype) !void {
 
 pub fn initTargetFile(params: anytype) !?*osufile.OsuFile {
     std.debug.print("LOG: Initializing file: `{s}`\n", .{params[1]});
-    const retval: *osufile.OsuFile = try std.heap.page_allocator.create(osufile.OsuFile);
+    const retval: *osufile.OsuFile = try std_allocator.create(osufile.OsuFile);
     try retval.*.init(params[1]);
     if (params[15][0] & 0x40 != 0) {
         const bckup_path = try retval.*.createBackup();
-        defer std.heap.page_allocator.free(bckup_path);
+        defer std_allocator.free(bckup_path);
         std.debug.print("LOG: Created backup file at `{s}`!\n", .{bckup_path});
     }
     return retval;
 }
 
 inline fn createUndo(start: i32, end: i32, cont: anytype, is_linked: bool) !void {
-    const node: *undo.UndoNode = try std.heap.page_allocator.create(undo.UndoNode);
+    const node: *undo.UndoNode = try std_allocator.create(undo.UndoNode);
     try node.*.init(start, end, cont);
     if (is_linked) {
         const parent = undo.UNDO_HEAD orelse unreachable; // This fn shouldn't be called without a parent being made before it
@@ -262,7 +264,7 @@ pub fn undoLast(opt_targ: ?*osufile.OsuFile, direction: undo.Direction) !void {
     if (opt_targ) |target| {
         if ((if (direction == .undo) undo.UNDO_HEAD else undo.REDO_HEAD)) |_| { // Nightmare
             var node = try undo.pop(direction);
-            const inverse_node = try std.heap.page_allocator.create(undo.UndoNode); // This node is going to the opposite stack
+            const inverse_node = try std_allocator.create(undo.UndoNode); // This node is going to the opposite stack
             var cur_inv_node: *undo.UndoNode = inverse_node;
             while (true) {
                 switch (node.*.cont_t) {
@@ -270,7 +272,7 @@ pub fn undoLast(opt_targ: ?*osufile.OsuFile, direction: undo.Direction) !void {
                         const exts = try target.*.extentsOfSection(node.*.extents[0], node.*.extents[1], sv.TimingPoint);
 
                         var tp: []sv.TimingPoint = try com.create(sv.TimingPoint);
-                        //defer std.heap.page_allocator.free(sv.TimingPoint); // Wouldn't this leak?
+                        //defer std_allocator.free(sv.TimingPoint); // Wouldn't this leak?
 
                         try target.loadObjArr(exts[0], exts[2], &tp);
                         try cur_inv_node.*.init(node.*.extents[0], node.*.extents[1], tp);
@@ -282,7 +284,7 @@ pub fn undoLast(opt_targ: ?*osufile.OsuFile, direction: undo.Direction) !void {
 
                         // Capture what is currently there
                         var hobjs: []hobj.HitObject = try com.create(hobj.HitObject);
-                        //defer std.heap.page_allocator.free(hobj.HitObject);
+                        //defer std_allocator.free(hobj.HitObject);
 
                         try target.loadObjArr(exts[0], exts[2], &hobjs);
                         try cur_inv_node.*.init(node.*.extents[0], node.*.extents[1], hobjs);
@@ -292,7 +294,7 @@ pub fn undoLast(opt_targ: ?*osufile.OsuFile, direction: undo.Direction) !void {
                 }
                 if (node.*.linked) |link| { // If there is a linked node
                     node = link; // Advance the node ptr
-                    cur_inv_node.*.linked = try std.heap.page_allocator.create(undo.UndoNode); // And make sure to create a matching redo node
+                    cur_inv_node.*.linked = try std_allocator.create(undo.UndoNode); // And make sure to create a matching redo node
                     cur_inv_node = cur_inv_node.*.linked orelse unreachable; // This was literally just fucking declared... please
                 } else break;
             }

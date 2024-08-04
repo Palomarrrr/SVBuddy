@@ -10,6 +10,8 @@ const RAND_GEN = std.rand.DefaultPrng;
 const sv = @import("./sv.zig");
 const com = @import("../util/common.zig");
 
+const std_allocator = com.std_allocator;
+
 // Just some shorthand shit to make things easier on me
 const stdout_file = std.io.getStdOut().writer();
 var bw = std.io.bufferedWriter(stdout_file);
@@ -36,8 +38,8 @@ pub const HitObject = struct {
     effects: u16 = 0,
 
     pub fn toStr(self: *const HitObject) ![]u8 {
-        //return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hit_sound });
-        return try std.fmt.allocPrint(std.heap.page_allocator, "{},{},{},{},{},{s}\r\n", .{ self.x, self.y, self.time, self.type, self.hit_sound, self.object_params });
+        //return try std.fmt.allocPrint(std_allocator, "{},{},{},{},{},0:0:0:0:\r\n", .{ self.x, self.y, self.time, self.type, self.hit_sound });
+        return try std.fmt.allocPrint(std_allocator, "{},{},{},{},{},{s}\r\n", .{ self.x, self.y, self.time, self.type, self.hit_sound, self.object_params });
     }
 
     pub fn fromStr(self: *HitObject, str: []u8) !void {
@@ -75,17 +77,17 @@ pub const HitObject = struct {
         }
         // THIS ISNT IMPLEMENTED YET SO WHY HAVE IT EXIST
         //std.debug.print("`{s}`\n", .{str[last..eol]});
-        self.object_params = try std.heap.page_allocator.alloc(u8, (eol - last));
+        self.object_params = try std_allocator.alloc(u8, (eol - last));
         @memcpy(self.object_params, str[last..eol]);
     }
 
     pub fn deinit(self: *HitObject) void {
-        std.heap.page_allocator.free(self.object_params);
+        std_allocator.free(self.object_params);
     }
 
     // Given a NUMERIC(not a string) list of snappings and a bpm, snap to the snapping w/ the smallest difference
     pub fn snapTo(self: *HitObject, list_of_snappings: []u8, bpm: f32, bpm_offset: i32) !void {
-        var diffs: []i32 = try std.heap.page_allocator.alloc(i32, list_of_snappings.len);
+        var diffs: []i32 = try std_allocator.alloc(i32, list_of_snappings.len);
         var d: i32 = 9999999; // just a large number
         var d_i: usize = 0;
         const time_per_measure: f32 = 60000.0 / bpm;
@@ -129,7 +131,7 @@ pub fn snapNotesTo(hitobj_array: []HitObject, snappings_str: []u8, sv_arr: []sv.
     const bpm: f32 = initial_bpm; // TBI
 
     const snappings: []u8 = try com.splitByComma(snappings_str); // Split the string
-    defer std.heap.page_allocator.free(snappings);
+    defer std_allocator.free(snappings);
 
     //const bpm_switch_time
     const n_uninherited: usize = if (sv_arr.len != 0) sv_arr.len - sv.getNumInherited(sv_arr) else 0;
@@ -145,9 +147,9 @@ pub fn snapNotesTo(hitobj_array: []HitObject, snappings_str: []u8, sv_arr: []sv.
 
 // So... This might be too rng to be *fully* automated....
 pub fn toUnhittableNote(hitobj_array: *[]HitObject, offset: i32) !void {
-    //hitobj_array.* = try std.heap.page_allocator.realloc(hitobj_array.*, hitobj_array.*.len * 2);
-    var ret_array = try std.heap.page_allocator.alloc(HitObject, hitobj_array.*.len * 2);
-    //defer std.heap.page_allocator.free(hitobj_array.*);
+    //hitobj_array.* = try std_allocator.realloc(hitobj_array.*, hitobj_array.*.len * 2);
+    var ret_array = try std_allocator.alloc(HitObject, hitobj_array.*.len * 2);
+    //defer std_allocator.free(hitobj_array.*);
 
     var i: usize = 0;
     var j: usize = 0;
@@ -177,7 +179,7 @@ pub fn toUnhittableNote(hitobj_array: *[]HitObject, offset: i32) !void {
 
 // Need this to return a slice instead of an array. either that or i need to find a good way to turn the result into a slice
 pub fn toBarline(hitobj_array: []HitObject) ![]sv.TimingPoint {
-    const timing_points: []sv.TimingPoint = try std.heap.page_allocator.alloc(sv.TimingPoint, hitobj_array.len);
+    const timing_points: []sv.TimingPoint = try std_allocator.alloc(sv.TimingPoint, hitobj_array.len);
     for (0..hitobj_array.len) |i| {
         if ((hitobj_array[i].type & 0x1) != 1) continue; // Skip non-notes
 

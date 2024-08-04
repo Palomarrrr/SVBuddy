@@ -1,31 +1,31 @@
 // "My hope is that this code is so awful I'm never allowed to write UI code again."
 
-//----//
+//--Zig Language Imports--//
 const std = @import("std");
 const builtin = @import("builtin");
 
-//----//
+//--Package Imports--//
 const capy = @import("capy");
 
-//----//
+//--Local Imports--//
 const osufile = @import("./core/osufileio.zig");
 const com = @import("./util/common.zig");
 const wrapper = @import("./util/backend_wrappers.zig");
 const pread = @import("./util/proc_read.zig");
 
-//----//
-const std_allocator = std.heap.page_allocator;
+//--Set up Common Allocator--//
+const std_allocator = com.std_allocator;
 
 //=============================================
 // TODO
 //=============================================
-//  * ADD KIAI CHECKBOX / AUTO KIAI ON AND OFF | SAME COULD GO FOR VOLUME
-//  * IMPLEMENT SONG PICKER W/ SOME KIND OF FUZZY SEARCH
+//  * finish up all of the hit object modifications; unhittable notes (which i need to find a better way of doing), notes to barline gimmicks, Shiny notes (stack with a 0 len slider), ninja notes, etc
+//  * Look at the katacheh gimmick tutorial docs and try to implement some of that stuff in here too
 //=============================================
 //  VERY BIG TODO
 //=============================================
+//  * REDESIGN UI S.T. IT DOESNT USE TABS AND CAN ACTUALLY WORK ON WINDOWS BECAUSE THATS A FUCKING ISSUE THAT I DIDN'T KNOW ID HAVE??
 //  * MAKE THIS PROGRAM STORE CHANGES IN A DIFF FORMAT INSTEAD OF THE DUMB FORMAT ITS IN NOW
-//  * SWITCH ALL page_allocator TO GeneralPurposeAllocator or FixedBufferAllocator | In progress
 //  * FINISH WINDOWS PROC READER
 //=============================================
 // LAYOUT IDEA
@@ -44,17 +44,17 @@ var PREADER: pread.ProcReader = undefined;
 // TODO: This could be done in a smarter way
 const SETTINGS_LOCATIONS = [_]usize{ 5, 6, 7, 8, 9, 10, 12 }; // Edit this when adding more boolean vars to the settings menu
 
-fn undoButton(btn: *capy.Button) anyerror!void {
+fn undoButton(btn: *capy.Button) !void {
     _ = btn;
     try wrapper.undoLast(CURR_FILE, .undo);
 }
 
-fn redoButton(btn: *capy.Button) anyerror!void {
+fn redoButton(btn: *capy.Button) !void {
     _ = btn;
     try wrapper.undoLast(CURR_FILE, .redo);
 }
 
-fn preaderBtn(btn: *capy.Button) anyerror!void {
+fn preaderBtn(btn: *capy.Button) !void {
     //defer PREADER.deinit(); //test
     const parent_wgt = btn.*.getParent().?.as(capy.Container);
     var params = [_][]u8{undefined} ** 16;
@@ -107,7 +107,7 @@ fn preaderBtn(btn: *capy.Button) anyerror!void {
     }
 }
 
-fn buttonClick(btn: *capy.Button) anyerror!void {
+fn buttonClick(btn: *capy.Button) !void {
     const parent_wgt = btn.*.getParent().?.as(capy.Container);
     const parent_name = parent_wgt.widget.?.name.get() orelse unreachable;
 

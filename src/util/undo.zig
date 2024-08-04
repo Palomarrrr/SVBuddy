@@ -1,6 +1,9 @@
 const std = @import("std");
 const sv = @import("../core/sv.zig");
 const hit_obj = @import("../core/hitobj.zig");
+const com = @import("./common.zig");
+
+const std_allocator = com.std_allocator;
 
 // TODO:
 // IMPLEMENT STACK LIMIT
@@ -52,12 +55,12 @@ pub const UndoNode = struct {
         switch (@TypeOf(cont)) { // Switch off type of input
             []hit_obj.HitObject => {
                 self.cont_t = .HitObj; // I really don't want to have to deal with *anyopaque and then having to do some nasty casting every time i want to use it
-                self.hobj = try std.heap.page_allocator.alloc(hit_obj.HitObject, cont.len);
+                self.hobj = try std_allocator.alloc(hit_obj.HitObject, cont.len);
                 @memcpy(self.hobj, cont);
             },
             []sv.TimingPoint => {
                 self.cont_t = .TimePoint;
-                self.tp = try std.heap.page_allocator.alloc(sv.TimingPoint, cont.len);
+                self.tp = try std_allocator.alloc(sv.TimingPoint, cont.len);
                 @memcpy(self.tp, cont);
             },
             else => unreachable,
@@ -69,8 +72,8 @@ pub const UndoNode = struct {
         // Loop through all the linked nodes and free all their contents
         while (current_node.?.*.linked != null) {
             switch (self.cont_t) {
-                .HitObj => std.heap.page_allocator.free(current_node.?.*.hobj), // Should never fail
-                .TimePoint => std.heap.page_allocator.free(current_node.?.*.tp), // Should never fail
+                .HitObj => std_allocator.free(current_node.?.*.hobj), // Should never fail
+                .TimePoint => std_allocator.free(current_node.?.*.tp), // Should never fail
             }
             current_node = current_node.?.*.linked;
         }

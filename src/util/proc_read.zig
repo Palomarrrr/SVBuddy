@@ -18,6 +18,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const REG_T = std.os.windows.REG;
 const win = std.os.windows;
+const com = @import("./common.zig");
+
+const std_allocator = com.std_allocator;
 
 pub const OSU_STATUS_SIG = [_]u8{ 0x48, 0x83, 0xF8, 0x04, 0x73, 0x1E }; // This isn't really used and i dont think its that useful actually
 pub const OSU_BASE_SIG = [_]u8{ 0xF8, 0x01, 0x74, 0x04, 0x83, 0x65 };
@@ -49,29 +52,29 @@ pub const ProcReader = switch (builtin.os.tag) {
                 } orelse return ProcReadErr.OsuProcDNE;
                 if (d.kind != std.fs.File.Kind.directory) continue;
 
-                const comm_path = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("/proc/"), @constCast(d.name), @constCast("/comm") });
-                defer std.heap.page_allocator.free(comm_path);
+                const comm_path = try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("/proc/"), @constCast(d.name), @constCast("/comm") });
+                defer std_allocator.free(comm_path);
 
                 const comm_file = std.fs.openFileAbsolute(comm_path, .{}) catch continue;
                 defer comm_file.close();
 
-                const contents = try std.heap.page_allocator.alloc(u8, 8);
-                defer std.heap.page_allocator.free(contents);
+                const contents = try std_allocator.alloc(u8, 8);
+                defer std_allocator.free(contents);
                 _ = try comm_file.readAll(contents);
 
                 if (std.ascii.eqlIgnoreCase(contents, "osu!.exe")) { // This seems janky as hell but everywhere points to using this method...
-                    const proc_path = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("/proc/"), @constCast(d.name) });
+                    const proc_path = try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("/proc/"), @constCast(d.name) });
 
-                    self.proc_dir = try std.heap.page_allocator.alloc(u8, proc_path.len);
+                    self.proc_dir = try std_allocator.alloc(u8, proc_path.len);
                     @memcpy(self.proc_dir, proc_path);
 
-                    const cmdline_path = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("/proc/"), @constCast(d.name), @constCast("/cmdline") });
-                    defer std.heap.page_allocator.free(cmdline_path);
+                    const cmdline_path = try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("/proc/"), @constCast(d.name), @constCast("/cmdline") });
+                    defer std_allocator.free(cmdline_path);
 
                     const cmdline_file = try std.fs.openFileAbsolute(cmdline_path, .{});
                     defer cmdline_file.close();
 
-                    //var cmdline_cont = try std.heap.page_allocator.alloc(u8, try cmdline_file.getEndPos()); // FIXME: Possibly unsafe?
+                    //var cmdline_cont = try std_allocator.alloc(u8, try cmdline_file.getEndPos()); // FIXME: Possibly unsafe?
                     // aww shit here we go again... ^ doesnt work... so fml i gotta do this the shitty way
                     var cont_len: usize = 0;
                     // Try to count up all the lines
@@ -83,19 +86,19 @@ pub const ProcReader = switch (builtin.os.tag) {
 
                     // NOT EVEN ^ WORKS??????????????????
                     // FUCK MEEEEE IM ENDING IT ALL
-                    const cont_tmp: []u8 = try std.heap.page_allocator.alloc(u8, 256); // If your path is longer than this you have bigger problems to worry about
-                    defer std.heap.page_allocator.free(cont_tmp);
+                    const cont_tmp: []u8 = try std_allocator.alloc(u8, 256); // If your path is longer than this you have bigger problems to worry about
+                    defer std_allocator.free(cont_tmp);
                     cont_len = (try cmdline_file.readAll(cont_tmp));
                     cont_len = @divTrunc(cont_len, 2); // I HATE WCHARS!!!!!
                     try cmdline_file.seekTo(0); // walk back
 
-                    var cmdline_cont = try std.heap.page_allocator.alloc(u8, cont_len);
-                    defer std.heap.page_allocator.free(cmdline_cont);
+                    var cmdline_cont = try std_allocator.alloc(u8, cont_len);
+                    defer std_allocator.free(cmdline_cont);
 
                     _ = try cmdline_file.readAll(cmdline_cont);
 
                     // OK SO PROBLEM THIS ONLY WORKS WHEN NO CMD FLAGS ARE USED
-                    //self.osu_dir = try std.heap.page_allocator.alloc(u8, cmdline_cont.len - 8); // osu!.exe is 8 chars so subtract that from there
+                    //self.osu_dir = try std_allocator.alloc(u8, cmdline_cont.len - 8); // osu!.exe is 8 chars so subtract that from there
                     //@memcpy(self.osu_dir, cmdline_cont[0 .. cmdline_cont.len - 8]);
 
                     // That should work better
@@ -103,7 +106,7 @@ pub const ProcReader = switch (builtin.os.tag) {
                     for (cmdline_cont, 0..) |c, i| { // Find the last '/'
                         if (c == '/') dirlen = i + 1;
                     }
-                    self.osu_dir = try std.heap.page_allocator.alloc(u8, dirlen);
+                    self.osu_dir = try std_allocator.alloc(u8, dirlen);
                     @memcpy(self.osu_dir, cmdline_cont[0..dirlen]);
 
                     break;
@@ -114,12 +117,12 @@ pub const ProcReader = switch (builtin.os.tag) {
         pub fn deinit(self: *ProcReader) void {
             //self.memReadDeinit();
             //self.mapReadDeinit();
-            std.heap.page_allocator.free(self.osu_dir);
-            std.heap.page_allocator.free(self.proc_dir);
+            std_allocator.free(self.osu_dir);
+            std_allocator.free(self.proc_dir);
         }
 
         pub inline fn memReadInit(self: *ProcReader) !void {
-            self.mem_file = try std.fs.openFileAbsolute(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ self.proc_dir, @constCast("/mem") }), .{});
+            self.mem_file = try std.fs.openFileAbsolute(try std.mem.concat(std_allocator, u8, &[_][]u8{ self.proc_dir, @constCast("/mem") }), .{});
         }
 
         pub inline fn memReadDeinit(self: *ProcReader) void {
@@ -132,7 +135,7 @@ pub const ProcReader = switch (builtin.os.tag) {
         }
 
         pub inline fn mapReadInit(self: *ProcReader) !void {
-            self.map_file = try std.fs.openFileAbsolute(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ self.proc_dir, @constCast("/maps") }), .{});
+            self.map_file = try std.fs.openFileAbsolute(try std.mem.concat(std_allocator, u8, &[_][]u8{ self.proc_dir, @constCast("/maps") }), .{});
         }
 
         pub inline fn mapReadDeinit(self: *ProcReader) void {
@@ -206,8 +209,8 @@ pub const ProcReader = switch (builtin.os.tag) {
                 //
                 // TRY TO MAKE IT NOT DO THAT YEAH????
 
-                var haystack = try std.heap.page_allocator.alloc(u8, reg[1]);
-                defer std.heap.page_allocator.free(haystack);
+                var haystack = try std_allocator.alloc(u8, reg[1]);
+                defer std_allocator.free(haystack);
 
                 try self.memReadInit();
                 defer self.memReadDeinit();
@@ -226,8 +229,8 @@ pub const ProcReader = switch (builtin.os.tag) {
         fn getBeatmapPtr(self: *ProcReader, base: usize) !u32 {
             var new_base: u32 = 0;
             //var buf = [_]u8{ 0, 0, 0, 0 }; // I AM GOING TO KILL MY SELF
-            var buf = try std.heap.page_allocator.alloc(u8, 4);
-            defer std.heap.page_allocator.free(buf);
+            var buf = try std_allocator.alloc(u8, 4);
+            defer std_allocator.free(buf);
 
             try self.memReadInit();
             defer self.memReadDeinit();
@@ -242,8 +245,8 @@ pub const ProcReader = switch (builtin.os.tag) {
             const bm_ptr = try self.getBeatmapPtr(base);
             std.debug.print("LOG: Loaded beatmap ptr: {}\n", .{bm_ptr});
             //var buf = [_]u8{ 0, 0, 0, 0 };
-            var buf = try std.heap.page_allocator.alloc(u8, 4); // IM KILLING MYSELFFFFFFF
-            defer std.heap.page_allocator.free(buf);
+            var buf = try std_allocator.alloc(u8, 4); // IM KILLING MYSELFFFFFFF
+            defer std_allocator.free(buf);
 
             // Set up memreader
             try self.memReadInit();
@@ -259,19 +262,19 @@ pub const ProcReader = switch (builtin.os.tag) {
             try self.memRead(path_ptr + 0x04, &buf);
             const path_sz = castToU32(&buf);
 
-            var dir_str: []u8 = try std.heap.page_allocator.alloc(u8, dir_sz * 2);
-            var path_str: []u8 = try std.heap.page_allocator.alloc(u8, path_sz * 2);
+            var dir_str: []u8 = try std_allocator.alloc(u8, dir_sz * 2);
+            var path_str: []u8 = try std_allocator.alloc(u8, path_sz * 2);
 
             try self.memRead(dir_ptr + 8, &dir_str);
             try self.memRead(path_ptr + 8, &path_str);
 
             // Convert these to utf8 because theyre currently in utf16 for some reason...
             const dir_u16str = try u8ArrToU16Arr(&dir_str);
-            const dir_utf8str = try std.unicode.utf16leToUtf8Alloc(std.heap.page_allocator, dir_u16str);
+            const dir_utf8str = try std.unicode.utf16leToUtf8Alloc(std_allocator, dir_u16str);
             const path_u16str = try u8ArrToU16Arr(&path_str);
-            const path_utf8str = try std.unicode.utf16leToUtf8Alloc(std.heap.page_allocator, path_u16str);
+            const path_utf8str = try std.unicode.utf16leToUtf8Alloc(std_allocator, path_u16str);
 
-            return try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ dir_utf8str, @constCast("/"), path_utf8str });
+            return try std.mem.concat(std_allocator, u8, &[_][]u8{ dir_utf8str, @constCast("/"), path_utf8str });
         }
 
         pub fn toStr(self: *ProcReader) ![]u8 { // Just a test fn
@@ -294,11 +297,11 @@ pub const ProcReader = switch (builtin.os.tag) {
             }
 
             const map_path = try self.getBeatmapPath(self.*.beatmap_base);
-            defer std.heap.page_allocator.free(map_path);
+            defer std_allocator.free(map_path);
 
             std.debug.print("Got beatmap path of: {s}Songs/{s}\n", .{ self.osu_dir, map_path });
 
-            const ret = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ self.osu_dir, @constCast("Songs/"), map_path });
+            const ret = try std.mem.concat(std_allocator, u8, &[_][]u8{ self.osu_dir, @constCast("Songs/"), map_path });
             return ret;
         }
     },
@@ -358,7 +361,7 @@ pub const ProcReader = switch (builtin.os.tag) {
             if (ret != 0) {
                 return ProcReadErr.OsuProcDNE;
             }
-            var path = try std.heap.page_allocator.alloc(win.WCHAR, size);
+            var path = try std_allocator.alloc(win.WCHAR, size);
             ret = win.advapi32.RegGetValueW(win.HKEY_CLASSES_ROOT, &lp_sub_key, &empty, win.advapi32.RRF.RT_REG_SZ, null, @ptrCast(&path), &size);
             if (ret != 0) {
                 return ProcReadErr.OsuFailedToReadReg;
@@ -377,7 +380,7 @@ pub const ProcReader = switch (builtin.os.tag) {
             const osuexe = [_]win.WCHAR{ 'o', 's', 'u', '!', '.', 'e', 'x', 'e' }; // I HATE THIS
             end_idx = (StrStrIW(path, @constCast(&osuexe)) orelse path.len) + 1;
             if (end_idx == path.len) {
-                //std.heap.page_allocator.free(path); // Probably errs
+                //std_allocator.free(path); // Probably errs
                 return ProcReadErr.OsuFailedToReadReg;
             }
 
@@ -385,7 +388,7 @@ pub const ProcReader = switch (builtin.os.tag) {
 
             path = path[start_idx..path.len]; // Hopefully this works?
 
-            self.osu_dir = try std.heap.page_allocator.allocSentinel(win.WCHAR, path.len, 0);
+            self.osu_dir = try std_allocator.allocSentinel(win.WCHAR, path.len, 0);
 
             for (path, 0..) |c, i| { // Copy over
                 self.osu_dir[i] = c;
@@ -403,7 +406,7 @@ pub const ProcReader = switch (builtin.os.tag) {
             _ = self;
             const size: usize = 128; // I don't know how do to GetUserName in zig without having to use imported C... so here we go
             // So we do this the slow and unreliable way
-            const uname: [*:0]u16 = try std.heap.page_allocator.allocSentinel(win.WCHAR, size, 0);
+            const uname: [*:0]u16 = try std_allocator.allocSentinel(win.WCHAR, size, 0);
             _ = try win.GetEnvironmentVariableW(@constCast(@alignCast(@ptrCast("$Env:Username"))), uname, size); // Nightmare casting
 
         }
@@ -467,7 +470,7 @@ inline fn u8ArrToU16Arr(in: *const []u8) ![]u16 {
 
     const new_len: usize = @divFloor(in.*.len, 2);
 
-    const out = try std.heap.page_allocator.alloc(u16, new_len);
+    const out = try std_allocator.alloc(u16, new_len);
 
     var i: usize = 1;
     var j: usize = 0;

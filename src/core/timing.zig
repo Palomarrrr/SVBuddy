@@ -1,5 +1,9 @@
 const std = @import("std");
+
 const sv = @import("sv.zig");
+const com = @import("../util/common.zig");
+
+const std_allocator = com.std_allocator;
 
 const TimingErr = error{
     InvalidChar,
@@ -24,7 +28,7 @@ pub fn timeStrToTick(time_str: []u8) !i32 {
                 tbit = 0;
                 i += 1;
             },
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
+            '0'...'9' => {
                 tbit *= 10;
                 tbit += (c - '0');
             },

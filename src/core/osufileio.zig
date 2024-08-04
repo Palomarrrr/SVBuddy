@@ -7,6 +7,9 @@ const fmt = std.fmt;
 const sv = @import("../core/sv.zig");
 const hitobj = @import("../core/hitobj.zig");
 const meta = @import("./metadata.zig");
+const com = @import("../util/common.zig");
+
+const std_allocator = com.std_allocator;
 
 const stdout_file = std.io.getStdOut().writer();
 var bw = std.io.bufferedWriter(stdout_file);
@@ -47,7 +50,7 @@ pub const OsuFile = struct {
         std.debug.print("PATH: {s}\n", .{path});
         if (std.ascii.eqlIgnoreCase(path, "NONE")) return OsuFileIOError.FileDNE;
 
-        self.path = try std.heap.page_allocator.alloc(u8, path.len);
+        self.path = try std_allocator.alloc(u8, path.len);
         @memcpy(self.path, path);
 
         self.file = fs.openFileAbsolute(self.path, .{ .mode = .read_write }) catch {
@@ -59,8 +62,8 @@ pub const OsuFile = struct {
 
         // TODO: This next bit is utterly retarded... how about no... you can do better
         const eos = try self.findEndOfSectionOffset(self.section_offsets[2]);
-        const metadata_sect: []u8 = try std.heap.page_allocator.alloc(u8, eos - self.section_offsets[2]);
-        defer std.heap.page_allocator.free(metadata_sect);
+        const metadata_sect: []u8 = try std_allocator.alloc(u8, eos - self.section_offsets[2]);
+        defer std_allocator.free(metadata_sect);
 
         try self.file.?.seekTo(self.section_offsets[2]);
         _ = try self.file.?.readAll(metadata_sect);
@@ -72,7 +75,7 @@ pub const OsuFile = struct {
     pub fn deinit(self: *OsuFile) void {
         self.file.?.close();
         self.metadata.deinit();
-        std.heap.page_allocator.free(self.path);
+        std_allocator.free(self.path);
     }
 
     // Reset all offsets and seek to the head of the file
@@ -116,10 +119,10 @@ pub const OsuFile = struct {
         const bckup_v_name = try self.metadata.genBackupVerName();
         const bckup_f_name = try self.metadata.genBackupFileName();
 
-        const tmp_pref: []u8 = try std.heap.page_allocator.alloc(u8, len);
+        const tmp_pref: []u8 = try std_allocator.alloc(u8, len);
         @memcpy(tmp_pref, self.path[0..len]);
-        const tmp_path = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ tmp_pref, bckup_f_name });
-        //defer std.heap.page_allocator.free(tmp_path);
+        const tmp_path = try std.mem.concat(std_allocator, u8, &[_][]u8{ tmp_pref, bckup_f_name });
+        //defer std_allocator.free(tmp_path);
 
         const tmpfp: fs.File = try fs.createFileAbsolute(tmp_path, .{ .read = true, .truncate = true });
 
@@ -142,16 +145,16 @@ pub const OsuFile = struct {
 
         // TODO: This is bad
         // Make a function to return a properly formatted string given a field or something
-        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Title:"), self.metadata.title, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("TitleUnicode:"), self.metadata.title_unicode, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Artist:"), self.metadata.artist, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("ArtistUnicode:"), self.metadata.artist_unicode, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Creator:"), self.metadata.creator, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Version:"), bckup_v_name, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Source:"), self.metadata.source, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ @constCast("Tags:"), self.metadata.tags, @constCast("\r\n") }));
-        _ = try tmpfp.writeAll(try fmt.allocPrint(std.heap.page_allocator, "BeatmapID:{}\r\n", .{self.metadata.beatmap_id}));
-        _ = try tmpfp.writeAll(try fmt.allocPrint(std.heap.page_allocator, "BeatmapSetID:{}\r\n", .{self.metadata.set_id}));
+        _ = try tmpfp.writeAll(try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("Title:"), self.metadata.title, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("TitleUnicode:"), self.metadata.title_unicode, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("Artist:"), self.metadata.artist, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("ArtistUnicode:"), self.metadata.artist_unicode, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("Creator:"), self.metadata.creator, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("Version:"), bckup_v_name, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("Source:"), self.metadata.source, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try std.mem.concat(std_allocator, u8, &[_][]u8{ @constCast("Tags:"), self.metadata.tags, @constCast("\r\n") }));
+        _ = try tmpfp.writeAll(try fmt.allocPrint(std_allocator, "BeatmapID:{}\r\n", .{self.metadata.beatmap_id}));
+        _ = try tmpfp.writeAll(try fmt.allocPrint(std_allocator, "BeatmapSetID:{}\r\n", .{self.metadata.set_id}));
 
         // Now pick up from where the section ended
         try self.file.?.seekTo(eos);
@@ -351,10 +354,10 @@ pub const OsuFile = struct {
             len -= 1;
         }
 
-        const tmp_pref: []u8 = try std.heap.page_allocator.alloc(u8, len);
+        const tmp_pref: []u8 = try std_allocator.alloc(u8, len);
         @memcpy(tmp_pref, self.path[0..len]);
-        const tmp_path = try std.mem.concat(std.heap.page_allocator, u8, &[_][]u8{ tmp_pref, @constCast("tmp.txt") });
-        defer std.heap.page_allocator.free(tmp_path);
+        const tmp_path = try std.mem.concat(std_allocator, u8, &[_][]u8{ tmp_pref, @constCast("tmp.txt") });
+        defer std_allocator.free(tmp_path);
 
         const tmpfp: fs.File = try fs.createFileAbsolute(tmp_path, .{ .read = true, .truncate = true });
 
@@ -371,7 +374,7 @@ pub const OsuFile = struct {
         // Insert the new stuff
         for (arr) |a| {
             const s = try a.toStr();
-            defer std.heap.page_allocator.free(s);
+            defer std_allocator.free(s);
             _ = try tmpfp.writeAll(s);
         }
 
@@ -478,7 +481,7 @@ pub const OsuFile = struct {
         };
         var buffer = [_]u8{0} ** 64;
 
-        arr.* = if (size != 0) (try std.heap.page_allocator.alloc(@TypeOf(arr.*[0]), size)) else return //OsuObjErr.NoPointsGiven;
+        arr.* = if (size != 0) (try std_allocator.alloc(@TypeOf(arr.*[0]), size)) else return //OsuObjErr.NoPointsGiven;
 
         //DEBUG
         //try self.file.?.seekTo(offset - 3);
