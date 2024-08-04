@@ -8,7 +8,7 @@ const MetadataSectionErr = error{
     InvalidField,
 };
 
-const SECTION_LABELS = [_][]const u8{ "Title", "TitleUnicode", "Artist", "ArtistUnicode", "Creator", "Version", "Source", "Tags", "BeatmapID", "BeatmapSetID" };
+const SECTION_LABELS = [_][]const u8{ "", "Title", "TitleUnicode", "Artist", "ArtistUnicode", "Creator", "Version", "Source", "Tags", "BeatmapID", "BeatmapSetID" };
 
 pub const Metadata = struct {
     title: []u8,
@@ -35,53 +35,59 @@ pub const Metadata = struct {
             switch (c) {
                 '\r' => continue, // FUCK I HATE THIS SHIT
                 '\n' => {
-                    switch (field) {
-                        0 => {
-                            self.title = try std_allocator.alloc(u8, i_buf);
-                            @memcpy(self.title, buffer[0..i_buf]);
-                        },
-                        1 => {
-                            self.title_unicode = try std_allocator.alloc(u8, i_buf);
-                            @memcpy(self.title_unicode, buffer[0..i_buf]);
-                        },
-                        2 => {
-                            self.artist = try std_allocator.alloc(u8, i_buf);
-                            @memcpy(self.artist, buffer[0..i_buf]);
-                        },
-                        3 => {
-                            self.artist_unicode = try std_allocator.alloc(u8, i_buf);
-                            @memcpy(self.artist_unicode, buffer[0..i_buf]);
-                        },
-                        4 => {
-                            self.creator = try std_allocator.alloc(u8, i_buf);
-                            @memcpy(self.creator, buffer[0..i_buf]);
-                        },
-                        5 => {
-                            self.version = try std_allocator.alloc(u8, i_buf);
-                            @memcpy(self.version, buffer[0..i_buf]);
-                        },
-                        6 => {
-                            self.source = try std_allocator.alloc(u8, i_buf);
-                            @memcpy(self.source, buffer[0..i_buf]);
-                        },
-                        7 => { // TODO: SEE TAGS FIELD
-                            self.tags = try std_allocator.alloc(u8, i_buf);
-                            @memcpy(self.tags, buffer[0..i_buf]);
-                        },
-                        8 => {
-                            self.beatmap_id = try std.fmt.parseUnsigned(u32, buffer[0..i_buf], 10);
-                        },
-                        9 => {
-                            self.set_id = try std.fmt.parseInt(i32, buffer[0..i_buf], 10);
-                        },
-                        else => return MetadataSectionErr.InvalidField,
+                    if (field != 0) {
+                        switch (field) {
+                            1 => {
+                                self.title = try std_allocator.alloc(u8, i_buf);
+                                @memcpy(self.title, buffer[0..i_buf]);
+                            },
+                            2 => {
+                                self.title_unicode = try std_allocator.alloc(u8, i_buf);
+                                @memcpy(self.title_unicode, buffer[0..i_buf]);
+                            },
+                            3 => {
+                                self.artist = try std_allocator.alloc(u8, i_buf);
+                                @memcpy(self.artist, buffer[0..i_buf]);
+                            },
+                            4 => {
+                                self.artist_unicode = try std_allocator.alloc(u8, i_buf);
+                                @memcpy(self.artist_unicode, buffer[0..i_buf]);
+                            },
+                            5 => {
+                                self.creator = try std_allocator.alloc(u8, i_buf);
+                                @memcpy(self.creator, buffer[0..i_buf]);
+                            },
+                            6 => {
+                                self.version = try std_allocator.alloc(u8, i_buf);
+                                @memcpy(self.version, buffer[0..i_buf]);
+                            },
+                            7 => {
+                                self.source = try std_allocator.alloc(u8, i_buf);
+                                @memcpy(self.source, buffer[0..i_buf]);
+                            },
+                            8 => { // TODO: SEE TAGS FIELD
+                                self.tags = try std_allocator.alloc(u8, i_buf);
+                                @memcpy(self.tags, buffer[0..i_buf]);
+                            },
+                            9 => {
+                                self.beatmap_id = try std.fmt.parseUnsigned(u32, buffer[0..i_buf], 10);
+                            },
+                            10 => {
+                                self.set_id = try std.fmt.parseInt(i32, buffer[0..i_buf], 10);
+                            },
+                            else => return MetadataSectionErr.InvalidField,
+                        }
+                        @memset(&buffer, 0);
+                        i_buf = 0;
+                        field = 0;
                     }
-                    @memset(&buffer, 0);
-                    i_buf = 0;
-                    field = 0;
                 },
                 ':' => blk: {
-                    if (field != 0) break :blk; // As to not fuck up if theres a ':' in a song name
+                    if (field != 0) {
+                        buffer[i_buf] = c; // Make sure to add it to the shit
+                        i_buf += 1;
+                        break :blk; // As to not fuck up if theres a ':' in any of the data - hopefully this works now
+                    }
                     _label: for (SECTION_LABELS) |L| { // Find the field this should go in
                         if (std.ascii.eqlIgnoreCase(L, buffer[0..i_buf])) break :_label;
                         field += 1;

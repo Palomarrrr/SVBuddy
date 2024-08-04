@@ -31,6 +31,9 @@ const std_allocator = com.std_allocator;
 // LAYOUT IDEA
 //=============================================
 //  * Go look at other tools for inspiration on layouts
+//  * Find a way to put the settings tab on the main window
+//      * Also maybe try to only show the manual entry after the proc finder fails
+//      * And try to make the settings (and literally just everything else) into a scrollable if you ever figure out how they work?
 //=============================================
 
 // This is required for your app to build to WebAssembly and other particular architectures
@@ -233,7 +236,9 @@ fn buttonClick(btn: *capy.Button) !void {
 }
 
 pub fn main() !void {
-    try capy.backend.init();
+    //try capy.backend.init();
+    try capy.init();
+    defer capy.deinit();
 
     var window = try capy.Window.init();
     defer window.deinit();
@@ -582,31 +587,19 @@ pub fn main() !void {
     const tab_cont_1 = capy.tab(.{ .label = "Slider Velocity" }, tab_cont_sv);
     const tab_cont_2 = capy.tab(.{ .label = "Hit Objects" }, tab_cont_hobj);
     const tab_cont_3 = capy.tab(.{ .label = "Barlines" }, tab_cont_barlines);
-    const tab_cont_set = capy.tab(.{ .label = "Settings" }, cont_set);
+    //const tab_cont_set = capy.tab(.{ .label = "Settings" }, cont_set);
 
-    const main_tab_cont = capy.tabs(.{ tab_cont_1, tab_cont_2, tab_cont_3, tab_cont_set });
+    //const main_tab_cont = capy.tabs(.{ tab_cont_1, tab_cont_2, tab_cont_3, tab_cont_set });
+    const main_tab_cont = capy.tabs(.{ tab_cont_1, tab_cont_2, tab_cont_3 });
 
-    var main_cont: *capy.Container = undefined;
-    switch (builtin.os.tag) {
-        .linux => {
-            //const TEST_IMG = capy.image(.{ .url = "file:///home/koishi/Programming/Zig/SVBUDDY/test_files/svbuddy.png", .scaling = .Fit }); // TODO: HOW THE FUCK DO I GET THIS TO JUST READ A RELATIVE PATH FML!!!!!!!!
-            main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
-                header_bar,
-                global_opt_bar,
-                //TEST_IMG, - i dont think this is really needed... id say make it the map bg but i dont think this does jpg
-                main_tab_cont,
-            });
-        },
-        else => {
-            main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
-                header_bar,
-                global_opt_bar,
-                main_tab_cont,
-            });
-        },
-    }
+    const main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
+        header_bar,
+        global_opt_bar,
+        cont_set,
+        main_tab_cont,
+    });
 
-    window.setPreferredSize(600, 640); // May need to be expanded in the future
+    window.setPreferredSize(600, 940); // May need to be expanded in the future
 
     window.setTitle("SVBuddy");
 

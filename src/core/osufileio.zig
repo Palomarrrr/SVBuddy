@@ -457,7 +457,7 @@ pub const OsuFile = struct {
                         break :blk;
                     },
                     else => blk: {
-                        if (r) {
+                        if (r and i_r < header_buf.len) {
                             header_buf[i_r] = c;
                             i_r += 1;
                         }
