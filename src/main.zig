@@ -21,6 +21,7 @@ const std_allocator = com.std_allocator;
 //=============================================
 //  * finish up all of the hit object modifications; unhittable notes (which i need to find a better way of doing), notes to barline gimmicks, Shiny notes (stack with a 0 len slider), ninja notes, etc
 //  * Look at the katacheh gimmick tutorial docs and try to implement some of that stuff in here too
+//  * Integer overflow error when snapping objects from (1103 => 3:38:229)
 //=============================================
 //  VERY BIG TODO
 //=============================================
@@ -44,8 +45,22 @@ var CURR_FILE: ?*osufile.OsuFile = null;
 var OPTION_FLAG: u8 = 0;
 var CURR_FILE_LABEL: ?*capy.Label = null;
 var PREADER: pread.ProcReader = undefined;
+var BTN_SUB_LINE: *capy.Container = undefined;
+var BTN_CURR_VIEW: *capy.Container = undefined;
+var SUBLINES: *[3]*capy.Container = undefined;
+var SV_VIEW_MAP: *[6]*capy.Container = undefined;
+var HOBJ_VIEW_MAP: *[3]*capy.Container = undefined;
+var BL_VIEW_MAP: *[2]*capy.Container = undefined;
 // TODO: This could be done in a smarter way
 const SETTINGS_LOCATIONS = [_]usize{ 5, 6, 7, 8, 9, 10, 12 }; // Edit this when adding more boolean vars to the settings menu
+
+fn switchView(btn: *capy.Button) !void {
+    _ = btn;
+}
+
+fn switchCategory(btn: *capy.Button) !void {
+    _ = btn;
+}
 
 fn undoButton(btn: *capy.Button) !void {
     _ = btn;
@@ -390,6 +405,8 @@ pub fn main() !void {
         }),
     });
 
+    SV_VIEW_MAP = @constCast(&[_]*capy.Container{ cont_lin, cont_exp, cont_sin, cont_bez, cont_adj, cont_lin_vol });
+
     //***************************************************
     //  HIT OBJECTS
     //***************************************************
@@ -442,6 +459,8 @@ pub fn main() !void {
         capy.textField(.{}),
     });
 
+    HOBJ_VIEW_MAP = @constCast(&[_]*capy.Container{ cont_snap_to, cont_to_barline, cont_to_unhittable });
+
     //***************************************************
     //  BARLINES
     //***************************************************
@@ -469,28 +488,28 @@ pub fn main() !void {
         capy.checkBox(.{ .label = "Escape out notes in this section", .checked = true }),
     });
 
-    const cont_linear_60k_bl = try capy.column(.{ .name = "31" }, .{
-        capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
-        capy.row(.{ .name = "LL", .expand = .Fill }, .{
-            capy.label(.{ .alignment = .Left, .text = "Start Time" }),
-            capy.label(.{ .alignment = .Left, .text = "End Time" }),
-        }),
-        capy.row(.{ .name = "TT", .expand = .Fill }, .{
-            capy.textField(.{}),
-            capy.textField(.{}),
-        }),
-        capy.row(.{ .name = "LL", .expand = .Fill }, .{
-            capy.label(.{ .alignment = .Left, .text = "Starting Lines" }),
-            capy.label(.{ .alignment = .Left, .text = "Ending Lines" }),
-        }),
-        capy.row(.{ .name = "TT", .expand = .Fill }, .{
-            capy.textField(.{}),
-            capy.textField(.{}),
-        }),
-        capy.label(.{ .alignment = .Left, .text = "Resolution" }),
-        capy.textField(.{}),
-        capy.checkBox(.{ .label = "Escape out notes in this section", .checked = true }),
-    });
+    //const cont_linear_60k_bl = try capy.column(.{ .name = "31" }, .{
+    //    capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
+    //    capy.row(.{ .name = "LL", .expand = .Fill }, .{
+    //        capy.label(.{ .alignment = .Left, .text = "Start Time" }),
+    //        capy.label(.{ .alignment = .Left, .text = "End Time" }),
+    //    }),
+    //    capy.row(.{ .name = "TT", .expand = .Fill }, .{
+    //        capy.textField(.{}),
+    //        capy.textField(.{}),
+    //    }),
+    //    capy.row(.{ .name = "LL", .expand = .Fill }, .{
+    //        capy.label(.{ .alignment = .Left, .text = "Starting Lines" }),
+    //        capy.label(.{ .alignment = .Left, .text = "Ending Lines" }),
+    //    }),
+    //    capy.row(.{ .name = "TT", .expand = .Fill }, .{
+    //        capy.textField(.{}),
+    //        capy.textField(.{}),
+    //    }),
+    //    capy.label(.{ .alignment = .Left, .text = "Resolution" }),
+    //    capy.textField(.{}),
+    //    capy.checkBox(.{ .label = "Escape out notes in this section", .checked = true }),
+    //});
 
     const cont_60k_bl_creator = try capy.column(.{ .name = "32", .expand = .No }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
@@ -525,6 +544,8 @@ pub fn main() !void {
         capy.checkBox(.{ .label = "Escape any notes in this section", .checked = true }),
         capy.checkBox(.{ .label = "Omit last barline", .checked = false }),
     });
+
+    BL_VIEW_MAP = @constCast(&[_]*capy.Container{ cont_static_rand_barline, cont_60k_bl_creator });
     //const cont_barlines_tba = try capy.column(.{ .name = "30" }, .{ // PLACEHOLDER
     //    capy.label(.{ .alignment = .Center, .text = "Coming soon (tm)" }),
     //});
@@ -565,38 +586,67 @@ pub fn main() !void {
         capy.button(.{ .label = "Undo", .onclick = @ptrCast(&undoButton) }),
     });
 
-    const tab_lin = capy.tab(.{ .label = "Linear" }, cont_lin);
-    const tab_exp = capy.tab(.{ .label = "Exponential" }, cont_exp);
-    const tab_sin = capy.tab(.{ .label = "Sine" }, cont_sin);
-    const tab_bez = capy.tab(.{ .label = "Bezier" }, cont_bez);
-    const tab_adj = capy.tab(.{ .label = "Adjustments" }, cont_adj);
-    const tab_lin_vol = capy.tab(.{ .label = "Linear Volume" }, cont_lin_vol);
+    const btn_lin = capy.button(.{ .name = "0", .label = "Linear", .onclick = @ptrCast(&switchView) });
+    const btn_exp = capy.button(.{ .name = "1", .label = "Exponential", .onclick = @ptrCast(&switchView) });
+    const btn_sin = capy.button(.{ .name = "2", .label = "Sine", .onclick = @ptrCast(&switchView) });
+    const btn_bez = capy.button(.{ .name = "3", .label = "Bezier", .onclick = @ptrCast(&switchView) });
+    const btn_adj = capy.button(.{ .name = "4", .label = "Adjust", .onclick = @ptrCast(&switchView) });
+    const btn_vol = capy.button(.{ .name = "5", .label = "Volume", .onclick = @ptrCast(&switchView) });
 
-    const tab_snap = capy.tab(.{ .label = "Auto-snap" }, cont_snap_to);
-    const tab_to_bar = capy.tab(.{ .label = "Note to barline" }, cont_to_barline);
-    const tab_to_unhit = capy.tab(.{ .label = "Unhittable note" }, cont_to_unhittable);
+    const btn_sv_subline = try capy.row(.{}, .{ btn_lin, btn_exp, btn_sin, btn_bez, btn_adj, btn_vol });
+    //const tab_lin = capy.tab(.{ .label = "Linear" }, cont_lin);
+    //const tab_exp = capy.tab(.{ .label = "Exponential" }, cont_exp);
+    //const tab_sin = capy.tab(.{ .label = "Sine" }, cont_sin);
+    //const tab_bez = capy.tab(.{ .label = "Bezier" }, cont_bez);
+    //const tab_adj = capy.tab(.{ .label = "Adjustments" }, cont_adj);
+    //const tab_lin_vol = capy.tab(.{ .label = "Linear Volume" }, cont_lin_vol);
 
-    const tab_static_rand_bl = capy.tab(.{ .label = "Random barline" }, cont_static_rand_barline);
-    const tab_linear_60k_bl = capy.tab(.{ .label = "Linear 60k barlines" }, cont_linear_60k_bl);
-    const tab_60k_bl_creator = capy.tab(.{ .label = "60k barline creator" }, cont_60k_bl_creator);
+    const btn_snap = capy.button(.{ .name = "0", .label = "Auto-Snap", .onclick = @ptrCast(&switchView) });
+    const btn_to_bl = capy.button(.{ .name = "1", .label = "Note to Barline", .onclick = @ptrCast(&switchView) });
+    const btn_to_unhit = capy.button(.{ .name = "2", .label = "Unhittable Note", .onclick = @ptrCast(&switchView) });
 
-    const tab_cont_sv = capy.tabs(.{ tab_lin, tab_exp, tab_sin, tab_bez, tab_adj, tab_lin_vol });
-    const tab_cont_hobj = capy.tabs(.{ tab_snap, tab_to_bar, tab_to_unhit });
-    const tab_cont_barlines = capy.tabs(.{ tab_static_rand_bl, tab_linear_60k_bl, tab_60k_bl_creator });
+    const btn_hobj_subline = try capy.row(.{}, .{ btn_snap, btn_to_bl, btn_to_unhit });
+    //const tab_snap = capy.tab(.{ .label = "Auto-snap" }, cont_snap_to);
+    //const tab_to_bar = capy.tab(.{ .label = "Note to barline" }, cont_to_barline);
+    //const tab_to_unhit = capy.tab(.{ .label = "Unhittable note" }, cont_to_unhittable);
 
-    const tab_cont_1 = capy.tab(.{ .label = "Slider Velocity" }, tab_cont_sv);
-    const tab_cont_2 = capy.tab(.{ .label = "Hit Objects" }, tab_cont_hobj);
-    const tab_cont_3 = capy.tab(.{ .label = "Barlines" }, tab_cont_barlines);
+    const btn_rand_bl = capy.button(.{ .name = "1", .label = "Random Barlines", .onclick = @ptrCast(&switchView) });
+    const btn_60k_bl_creator = capy.button(.{ .name = "1", .label = "60k Barline Creator", .onclick = @ptrCast(&switchView) });
+
+    const btn_bl_subline = try capy.row(.{}, .{ btn_rand_bl, btn_60k_bl_creator });
+    //const tab_static_rand_bl = capy.tab(.{ .label = "Random barline" }, cont_static_rand_barline);
+    //const tab_linear_60k_bl = capy.tab(.{ .label = "Linear 60k barlines" }, cont_linear_60k_bl);
+    //const tab_60k_bl_creator = capy.tab(.{ .label = "60k barline creator" }, cont_60k_bl_creator);
+
+    const btn_sv_view = capy.button(.{ .name = "0", .label = "Slider Velocity", .onclick = @ptrCast(&switchView) });
+    const btn_hobj_view = capy.button(.{ .name = "1", .label = "Hit Object", .onclick = @ptrCast(&switchView) });
+    const btn_bl_view = capy.button(.{ .name = "2", .label = "Barlines", .onclick = @ptrCast(&switchView) });
+
+    const btn_main_line = try capy.row(.{}, .{ btn_sv_view, btn_hobj_view, btn_bl_view });
+    //const tab_cont_sv = capy.tabs(.{ tab_lin, tab_exp, tab_sin, tab_bez, tab_adj, tab_lin_vol });
+    //const tab_cont_hobj = capy.tabs(.{ tab_snap, tab_to_bar, tab_to_unhit });
+    //const tab_cont_barlines = capy.tabs(.{ tab_static_rand_bl, tab_linear_60k_bl, tab_60k_bl_creator });
+
+    SUBLINES = @constCast(&[_]*capy.Container{ btn_sv_subline, btn_hobj_subline, btn_bl_subline });
+
+    BTN_SUB_LINE = btn_sv_subline;
+    BTN_CURR_VIEW = cont_lin;
+    //const tab_cont_1 = capy.tab(.{ .label = "Slider Velocity" }, tab_cont_sv);
+    //const tab_cont_2 = capy.tab(.{ .label = "Hit Objects" }, tab_cont_hobj);
+    //const tab_cont_3 = capy.tab(.{ .label = "Barlines" }, tab_cont_barlines);
     //const tab_cont_set = capy.tab(.{ .label = "Settings" }, cont_set);
 
     //const main_tab_cont = capy.tabs(.{ tab_cont_1, tab_cont_2, tab_cont_3, tab_cont_set });
-    const main_tab_cont = capy.tabs(.{ tab_cont_1, tab_cont_2, tab_cont_3 });
+    //const main_tab_cont = capy.tabs(.{  tab_cont_2, tab_cont_3 });
 
     const main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
         header_bar,
         global_opt_bar,
         cont_set,
-        main_tab_cont,
+        btn_main_line,
+        BTN_SUB_LINE,
+        BTN_CURR_VIEW,
+        //main_tab_cont,
     });
 
     window.setPreferredSize(600, 940); // May need to be expanded in the future

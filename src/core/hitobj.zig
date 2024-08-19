@@ -113,12 +113,12 @@ pub const HitObject = struct {
         self.time = (self.time - diffs[d_i]) + @rem(bpm_offset, @as(i32, @intFromFloat(@round(time_per_measure)))); // snap the note
     }
 
-    pub inline fn isDon(self: *HitObject) bool {
-        if (self.hit_sound & 0x1) return true;
+    pub inline fn isDon(self: *const HitObject) bool {
+        if ((self.hit_sound & 0x1 == 0x1) or self.hit_sound == 0) return true; // normal hitsound can also be represented as 0
         return false;
     }
-    pub inline fn isFinisher(self: *HitObject) bool {
-        if (self.hit_sound & 0x4) return true;
+    pub inline fn isFinisher(self: *const HitObject) bool {
+        if (self.hit_sound & 0x4 == 0x4) return true;
         return false;
     }
 };
@@ -177,34 +177,163 @@ pub fn toUnhittableNote(hitobj_array: *[]HitObject, offset: i32) !void {
     hitobj_array.* = ret_array;
 }
 
-// Need this to return a slice instead of an array. either that or i need to find a good way to turn the result into a slice
-pub fn toBarline(hitobj_array: []HitObject) ![]sv.TimingPoint {
-    const timing_points: []sv.TimingPoint = try std_allocator.alloc(sv.TimingPoint, hitobj_array.len);
-    for (0..hitobj_array.len) |i| {
-        if ((hitobj_array[i].type & 0x1) != 1) continue; // Skip non-notes
-
-        if ((hitobj_array[i].hit_sound & 0x1) == 1) { // NEED TO ALSO CHECK FOR FINISHER D
-            // D
-
-            // Place a barline on the note with "omit first barline" enabled
-            // Place a 10x sv point on the note
-            // Place a barline 1ms before the note (WITH THE PROPER SV FOR THE SECTION)
-            // Place a sv point 1ms after the note with the proper sv for the section
-
+// TODO - Make the notes on a 10000bpm 10x sv point instead of a normal bpm 10x sv s.t. they can't be seen
+// Also this is super unoptimal... fix it
+pub fn toBarline(hitobj_array: []HitObject, prev_sv: []sv.TimingPoint, bpm: f32, d_barlines: u8, k_barlines: u8) ![]sv.TimingPoint {
+    var n: usize = 0;
+    for (hitobj_array) |obj| {
+        if ((obj.type & 0x1) != 0x1) continue;
+        if (obj.isDon()) {
+            n += d_barlines * 2 + 3; // *2 for the bl + its sv, +3 for omitted bl on the note + its 10x sv + the normal sv after it
         } else {
-            // K
+            n += k_barlines * 2 + 3;
+        }
+    }
+    const timing_points: []sv.TimingPoint = try std_allocator.alloc(sv.TimingPoint, n);
+    var j: usize = 0;
+    var curr_sv: f32 = 1;
+
+    if (prev_sv.len != 0) {
+        blk: for (prev_sv) |s| {
+            if (s.is_inh == 0) {
+                curr_sv = s.valueToHumanReadable();
+                break :blk;
+            }
+        }
+    }
+    var prev_sv_idx: usize = 0;
+
+    for (0..hitobj_array.len) |i| {
+        if ((hitobj_array[i].type & 0x1) != 0x1) continue; // Skip non-notes
+
+        if (prev_sv.len != 0) {
+            blk: for (prev_sv_idx..prev_sv.len) |s| {
+                if (prev_sv[s].is_inh == 1) continue; // uninherited points don't matter for now
+                if (prev_sv[s].time <= hitobj_array[i].time) {
+                    curr_sv = prev_sv[s].valueToHumanReadable();
+                } else {
+                    prev_sv_idx = s - 1;
+                    break :blk;
+                }
+            }
+        }
+
+        if (hitobj_array[i].isDon()) {
+
+            // Place a barline 1ms before the note (WITH THE PROPER SV FOR THE SECTION - TBI)
+            for (0..d_barlines) |k| {
+                timing_points[j] = sv.TimingPoint{
+                    .time = hitobj_array[i].time - @as(i32, @intCast(k + 1)),
+                    .value = sv.valueFromHumanReadable(bpm, 1),
+                    .meter = 4,
+                    .sample_set = 1,
+                    .volume = 100,
+                    .is_inh = 1,
+                    .effects = 0,
+                };
+                timing_points[j + 1] = sv.TimingPoint{
+                    .time = hitobj_array[i].time - @as(i32, @intCast(k + 1)),
+                    .value = sv.valueFromHumanReadable(curr_sv, 0),
+                    .meter = 4,
+                    .sample_set = 1,
+                    .volume = 100,
+                    .is_inh = 0,
+                    .effects = 0,
+                };
+                j += 2;
+            }
 
             // Place a barline on the note with "omit first barline" enabled
-            // Place a 10x sv point on the note
-            // Place 4 barlines 4ms, 3ms, 2ms, and 1ms before the note (ALL WITH THE PROPER SV FOR THE SECTION)
-            // Place a sv point 1ms after the note with the proper sv for the section
-            //barlines[i].time = hitobj_array[i].time - 4
-            //barlines[i].time = hitobj_array[i].time - 3
-            //barlines[i].time = hitobj_array[i].time - 2
-            //barlines[i].time = hitobj_array[i].time - 1
-            //barlines[i].time = hitobj_array[i].time - 4
-            //barlines[i].time = hitobj_array[i].time - 4
+            timing_points[j] = sv.TimingPoint{
+                .time = hitobj_array[i].time,
+                .value = sv.valueFromHumanReadable(bpm, 1),
+                .meter = 4,
+                .sample_set = 1,
+                .volume = 100,
+                .is_inh = 1,
+                .effects = 8,
+            };
 
+            // Place a 10x sv point on the note
+            timing_points[j + 1] = sv.TimingPoint{
+                .time = hitobj_array[i].time,
+                .value = sv.valueFromHumanReadable(10, 0),
+                .meter = 4,
+                .sample_set = 1,
+                .volume = 100,
+                .is_inh = 0,
+                .effects = 0,
+            };
+
+            // Place a normal sv point after the note
+            timing_points[j + 2] = sv.TimingPoint{
+                .time = hitobj_array[i].time + 1,
+                .value = sv.valueFromHumanReadable(curr_sv, 0),
+                .meter = 4,
+                .sample_set = 1,
+                .volume = 100,
+                .is_inh = 0,
+                .effects = 0,
+            };
+
+            j += 3;
+        } else {
+            for (0..k_barlines) |k| {
+                timing_points[j] = sv.TimingPoint{
+                    .time = hitobj_array[i].time - @as(i32, @intCast(k + 1)),
+                    .value = sv.valueFromHumanReadable(bpm, 1),
+                    .meter = 4,
+                    .sample_set = 1,
+                    .volume = 100,
+                    .is_inh = 1,
+                    .effects = 0,
+                };
+                timing_points[j + 1] = sv.TimingPoint{
+                    .time = hitobj_array[i].time - @as(i32, @intCast(k + 1)),
+                    .value = sv.valueFromHumanReadable(curr_sv, 0),
+                    .meter = 4,
+                    .sample_set = 1,
+                    .volume = 100,
+                    .is_inh = 0,
+                    .effects = 0,
+                };
+                j += 2;
+            }
+
+            // Place a barline on the note with "omit first barline" enabled
+            timing_points[j] = sv.TimingPoint{
+                .time = hitobj_array[i].time,
+                .value = sv.valueFromHumanReadable(bpm, 1),
+                .meter = 4,
+                .sample_set = 1,
+                .volume = 100,
+                .is_inh = 1,
+                .effects = 8,
+            };
+
+            // Place a 10x sv point on the note
+            timing_points[j + 1] = sv.TimingPoint{
+                .time = hitobj_array[i].time,
+                .value = sv.valueFromHumanReadable(10, 0),
+                .meter = 4,
+                .sample_set = 1,
+                .volume = 100,
+                .is_inh = 0,
+                .effects = 0,
+            };
+
+            // Place a normal sv point after the note
+            timing_points[j + 2] = sv.TimingPoint{
+                .time = hitobj_array[i].time + 1,
+                .value = sv.valueFromHumanReadable(curr_sv, 0),
+                .meter = 4,
+                .sample_set = 1,
+                .volume = 100,
+                .is_inh = 0,
+                .effects = 0,
+            };
+
+            j += 3;
         }
     }
     return timing_points;

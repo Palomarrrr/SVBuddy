@@ -98,6 +98,11 @@ pub const TimingPoint = struct {
     }
     // MAJOR-FIXME: FOR SOME REASON FIELDS 3,4,6,8 ALL DISPLAY 170 INSTEAD OF 0 - SHOULD BE FIXED
 };
+
+pub inline fn valueFromHumanReadable(value: f32, is_inh: u1) f32 {
+    return if (is_inh == 0) -100.0 / value else 60000.0 / value;
+}
+
 //**********************************************************
 //                      VOLUME TOOLS
 //**********************************************************

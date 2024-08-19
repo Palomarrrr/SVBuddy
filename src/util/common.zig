@@ -5,7 +5,14 @@ pub const std_allocator = std.heap.page_allocator;
 pub const CommonError = error{
     NonNumericInput,
     InvalidInput,
+    OffsetOutOfRange,
 };
+
+// Places `s` starting at `offset` in `d`
+pub inline fn offsetcpy(T: type, s: []T, d: *[]T, offset: usize) !void {
+    if ((s.len + offset) > d.*.len) return CommonError.OffsetOutOfRange;
+    for (s, 0..) |u, i| d.*[offset + i] = u;
+}
 
 pub inline fn create(T: anytype) ![]T {
     return try std_allocator.alloc(T, 0);
