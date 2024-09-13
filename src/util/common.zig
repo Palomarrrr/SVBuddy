@@ -8,6 +8,12 @@ pub const CommonError = error{
     OffsetOutOfRange,
 };
 
+pub inline fn genShitHash(s: []u8) usize {
+    var ret: usize = 0;
+    for (s) |c| ret += c;
+    return ret;
+}
+
 // Places `s` starting at `offset` in `d`
 pub inline fn offsetcpy(T: type, s: []T, d: *[]T, offset: usize) !void {
     if ((s.len + offset) > d.*.len) return CommonError.OffsetOutOfRange;

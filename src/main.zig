@@ -41,12 +41,15 @@ const std_allocator = com.std_allocator;
 pub usingnamespace capy.cross_platform;
 
 // This is awful but its the only way i can think of passing these
+var MAIN_WIN: *capy.Window = undefined;
+var MAIN_CONT: *capy.Container = undefined;
 var CURR_FILE: ?*osufile.OsuFile = null;
 var OPTION_FLAG: u8 = 0;
 var CURR_FILE_LABEL: ?*capy.Label = null;
 var PREADER: pread.ProcReader = undefined;
 var BTN_SUB_LINE: *capy.Container = undefined;
-var BTN_CURR_VIEW: *capy.Container = undefined;
+var CURR_VIEW: *capy.Container = undefined;
+// TODO: THIS FUCKING SUCKS AAAAAAAAAAAAAAAAAAAAA
 var SUBLINES: *[3]*capy.Container = undefined;
 var SV_VIEW_MAP: *[6]*capy.Container = undefined;
 var HOBJ_VIEW_MAP: *[3]*capy.Container = undefined;
@@ -55,11 +58,57 @@ var BL_VIEW_MAP: *[2]*capy.Container = undefined;
 const SETTINGS_LOCATIONS = [_]usize{ 5, 6, 7, 8, 9, 10, 12 }; // Edit this when adding more boolean vars to the settings menu
 
 fn switchView(btn: *capy.Button) !void {
-    _ = btn;
+    var subline: usize = 0;
+    const reqd_view: usize = (btn.widget_data.widget.name.get() orelse unreachable)[0] - '0';
+
+    CURR_VIEW.ref(); // this is needed s.t. the view doesnt get freed
+
+    // find out what subline to choose from
+    // TODO: This can be combined with the switch statement below to be more efficient... do that instead
+    for (SUBLINES.*, 0..) |line, i| {
+        if (BTN_SUB_LINE == line) subline = i;
+    }
+
+    // TODO: This is bad... do this better
+    if (subline == 0 and CURR_VIEW == SV_VIEW_MAP[reqd_view]) return;
+    if (subline == 1 and CURR_VIEW == HOBJ_VIEW_MAP[reqd_view]) return;
+    if (subline == 2 and CURR_VIEW == BL_VIEW_MAP[reqd_view]) return;
+
+    CURR_VIEW = switch (subline) {
+        0 => SV_VIEW_MAP[reqd_view],
+        1 => HOBJ_VIEW_MAP[reqd_view],
+        2 => BL_VIEW_MAP[reqd_view],
+        else => unreachable,
+    };
+
+    CURR_VIEW.widget_data.widget.parent = MAIN_CONT.asWidget(); // I dont know if this is helping anything...
+
+    try MAIN_CONT.*.add(CURR_VIEW);
+    MAIN_CONT.*.removeByIndex(5);
 }
 
 fn switchCategory(btn: *capy.Button) !void {
-    _ = btn;
+    const reqd_view: usize = (btn.widget_data.widget.name.get() orelse unreachable)[0] - '0';
+
+    BTN_SUB_LINE.ref(); // this is needed s.t. the view doesnt get freed
+    CURR_VIEW.ref(); // this is needed s.t. the view doesnt get freed
+
+    if (BTN_SUB_LINE == SUBLINES.*[reqd_view]) return;
+    BTN_SUB_LINE = SUBLINES.*[reqd_view];
+    CURR_VIEW = switch (reqd_view) {
+        0 => SV_VIEW_MAP[0],
+        1 => HOBJ_VIEW_MAP[0],
+        2 => BL_VIEW_MAP[0],
+        else => unreachable,
+    };
+
+    CURR_VIEW.widget_data.widget.parent = MAIN_CONT.asWidget();
+    BTN_SUB_LINE.widget_data.widget.parent = MAIN_CONT.asWidget();
+
+    MAIN_CONT.*.removeByIndex(5);
+    MAIN_CONT.*.removeByIndex(4);
+    try MAIN_CONT.*.add(BTN_SUB_LINE);
+    try MAIN_CONT.*.add(CURR_VIEW);
 }
 
 fn undoButton(btn: *capy.Button) !void {
@@ -257,6 +306,7 @@ pub fn main() !void {
 
     var window = try capy.Window.init();
     defer window.deinit();
+    MAIN_WIN = &window;
 
     const cont_lin = try capy.column(.{ .name = "10" }, .{
         capy.button(.{ .label = "Apply", .onclick = @ptrCast(&buttonClick) }),
@@ -593,7 +643,7 @@ pub fn main() !void {
     const btn_adj = capy.button(.{ .name = "4", .label = "Adjust", .onclick = @ptrCast(&switchView) });
     const btn_vol = capy.button(.{ .name = "5", .label = "Volume", .onclick = @ptrCast(&switchView) });
 
-    const btn_sv_subline = try capy.row(.{}, .{ btn_lin, btn_exp, btn_sin, btn_bez, btn_adj, btn_vol });
+    const btn_sv_subline = try capy.row(.{ .expand = .Fill, .spacing = 0 }, .{ btn_lin, btn_exp, btn_sin, btn_bez, btn_adj, btn_vol });
     //const tab_lin = capy.tab(.{ .label = "Linear" }, cont_lin);
     //const tab_exp = capy.tab(.{ .label = "Exponential" }, cont_exp);
     //const tab_sin = capy.tab(.{ .label = "Sine" }, cont_sin);
@@ -605,32 +655,33 @@ pub fn main() !void {
     const btn_to_bl = capy.button(.{ .name = "1", .label = "Note to Barline", .onclick = @ptrCast(&switchView) });
     const btn_to_unhit = capy.button(.{ .name = "2", .label = "Unhittable Note", .onclick = @ptrCast(&switchView) });
 
-    const btn_hobj_subline = try capy.row(.{}, .{ btn_snap, btn_to_bl, btn_to_unhit });
+    const btn_hobj_subline = try capy.row(.{ .expand = .Fill, .spacing = 0 }, .{ btn_snap, btn_to_bl, btn_to_unhit });
     //const tab_snap = capy.tab(.{ .label = "Auto-snap" }, cont_snap_to);
     //const tab_to_bar = capy.tab(.{ .label = "Note to barline" }, cont_to_barline);
     //const tab_to_unhit = capy.tab(.{ .label = "Unhittable note" }, cont_to_unhittable);
 
-    const btn_rand_bl = capy.button(.{ .name = "1", .label = "Random Barlines", .onclick = @ptrCast(&switchView) });
+    const btn_rand_bl = capy.button(.{ .name = "0", .label = "Random Barlines", .onclick = @ptrCast(&switchView) });
     const btn_60k_bl_creator = capy.button(.{ .name = "1", .label = "60k Barline Creator", .onclick = @ptrCast(&switchView) });
 
-    const btn_bl_subline = try capy.row(.{}, .{ btn_rand_bl, btn_60k_bl_creator });
+    const btn_bl_subline = try capy.row(.{ .expand = .Fill, .spacing = 0 }, .{ btn_rand_bl, btn_60k_bl_creator });
     //const tab_static_rand_bl = capy.tab(.{ .label = "Random barline" }, cont_static_rand_barline);
     //const tab_linear_60k_bl = capy.tab(.{ .label = "Linear 60k barlines" }, cont_linear_60k_bl);
     //const tab_60k_bl_creator = capy.tab(.{ .label = "60k barline creator" }, cont_60k_bl_creator);
 
-    const btn_sv_view = capy.button(.{ .name = "0", .label = "Slider Velocity", .onclick = @ptrCast(&switchView) });
-    const btn_hobj_view = capy.button(.{ .name = "1", .label = "Hit Object", .onclick = @ptrCast(&switchView) });
-    const btn_bl_view = capy.button(.{ .name = "2", .label = "Barlines", .onclick = @ptrCast(&switchView) });
+    const btn_sv_view = capy.button(.{ .name = "0", .label = "Slider Velocity", .onclick = @ptrCast(&switchCategory) });
+    const btn_hobj_view = capy.button(.{ .name = "1", .label = "Hit Object", .onclick = @ptrCast(&switchCategory) });
+    const btn_bl_view = capy.button(.{ .name = "2", .label = "Barlines", .onclick = @ptrCast(&switchCategory) });
 
-    const btn_main_line = try capy.row(.{}, .{ btn_sv_view, btn_hobj_view, btn_bl_view });
+    const btn_main_line = try capy.row(.{ .expand = .Fill, .spacing = 5 }, .{ btn_sv_view, btn_hobj_view, btn_bl_view });
     //const tab_cont_sv = capy.tabs(.{ tab_lin, tab_exp, tab_sin, tab_bez, tab_adj, tab_lin_vol });
     //const tab_cont_hobj = capy.tabs(.{ tab_snap, tab_to_bar, tab_to_unhit });
     //const tab_cont_barlines = capy.tabs(.{ tab_static_rand_bl, tab_linear_60k_bl, tab_60k_bl_creator });
 
     SUBLINES = @constCast(&[_]*capy.Container{ btn_sv_subline, btn_hobj_subline, btn_bl_subline });
 
+    // Just some initial values
     BTN_SUB_LINE = btn_sv_subline;
-    BTN_CURR_VIEW = cont_lin;
+    CURR_VIEW = cont_lin;
     //const tab_cont_1 = capy.tab(.{ .label = "Slider Velocity" }, tab_cont_sv);
     //const tab_cont_2 = capy.tab(.{ .label = "Hit Objects" }, tab_cont_hobj);
     //const tab_cont_3 = capy.tab(.{ .label = "Barlines" }, tab_cont_barlines);
@@ -639,13 +690,13 @@ pub fn main() !void {
     //const main_tab_cont = capy.tabs(.{ tab_cont_1, tab_cont_2, tab_cont_3, tab_cont_set });
     //const main_tab_cont = capy.tabs(.{  tab_cont_2, tab_cont_3 });
 
-    const main_cont = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
+    MAIN_CONT = try capy.column(.{ .expand = .No, .spacing = 5 }, .{
         header_bar,
         global_opt_bar,
         cont_set,
         btn_main_line,
         BTN_SUB_LINE,
-        BTN_CURR_VIEW,
+        CURR_VIEW,
         //main_tab_cont,
     });
 
@@ -653,7 +704,7 @@ pub fn main() !void {
 
     window.setTitle("SVBuddy");
 
-    try window.set(main_cont);
+    try window.set(MAIN_CONT);
 
     window.show();
     capy.runEventLoop();
